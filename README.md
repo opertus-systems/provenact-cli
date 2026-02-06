@@ -43,7 +43,7 @@ inactu/
 ├─ core/            # Verification, signing, policy libraries (Rust)
 ├─ runtime/         # Runtime execution/transcript docs
 ├─ cli/             # Developer tooling (pack, sign, verify, run)
-├─ skills/          # Blessed stdlib skills (v0 placeholder)
+├─ skills/          # Blessed stdlib skills and fixtures
 ├─ test-vectors/    # Conformance vectors
 ├─ docs/            # Architecture and release/readiness docs
 ├─ apps/            # Temporary app/control-plane scaffolds
