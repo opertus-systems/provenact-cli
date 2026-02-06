@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inactu.dev/spec/install/index.schema.json",
+  "title": "Inactu Install Index v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "entries"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "skill",
+          "source",
+          "store",
+          "installed_at",
+          "manifest_name",
+          "manifest_version"
+        ],
+        "properties": {
+          "skill": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "store": {
+            "type": "string",
+            "minLength": 1
+          },
+          "installed_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "manifest_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "manifest_version": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -35,10 +35,7 @@ pub fn parse_public_keys(bytes: &[u8]) -> Result<HashMap<String, VerifyingKey>, 
     Ok(out)
 }
 
-pub fn verify_keys_digest(keys_raw: &[u8], expected: Option<&str>) -> Result<(), String> {
-    let Some(expected) = expected else {
-        return Ok(());
-    };
+pub fn verify_keys_digest(keys_raw: &[u8], expected: &str) -> Result<(), String> {
     if !is_valid_sha256_digest(expected) {
         return Err(format!(
             "invalid --keys-digest format (expected sha256:<64 lowercase hex>): {expected}"

@@ -9,3 +9,4 @@ pub const MAX_WASM_BYTES: u64 = 16 * 1024 * 1024;
 pub const MAX_JSON_BYTES: u64 = 1024 * 1024;
 pub const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 pub const MAX_SECRET_KEY_BYTES: u64 = 16 * 1024;
+pub const MAX_SKILL_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;

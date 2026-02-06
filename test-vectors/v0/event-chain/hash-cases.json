@@ -1,0 +1,29 @@
+{
+  "name": "v0 event hash cases",
+  "cases": [
+    {
+      "prev_hash": null,
+      "ts": "2026-02-06T16:12:43Z",
+      "run_id": "run-001",
+      "node_id": "fetch",
+      "type": "node.start",
+      "data": {
+        "input_bytes": 42
+      },
+      "expected_hash": "sha256:c12beec4db34b04445428b1c9cac0697054b0b8c4da06de6fca3d37779967891"
+    },
+    {
+      "prev_hash": "sha256:c12beec4db34b04445428b1c9cac0697054b0b8c4da06de6fca3d37779967891",
+      "ts": "2026-02-06T16:12:44Z",
+      "run_id": "run-001",
+      "node_id": "fetch",
+      "type": "cap.net.http",
+      "data": {
+        "domain": "example.com",
+        "method": "GET",
+        "bytes": 12345
+      },
+      "expected_hash": "sha256:aea658be25dc576b9189c66b09708a96ccb091f7b737bc3fd1fd6f5f085391ad"
+    }
+  ]
+}

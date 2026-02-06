@@ -1,0 +1,14 @@
+{
+  "schema_version": "v0",
+  "pipeline_id": "com.opertus.demo.invalid_hash_object",
+  "nodes": [
+    {
+      "id": "fetch",
+      "skill": {
+        "hash": "sha256:not-a-real-digest",
+        "source": "file:///tmp/fetch.tar.zst"
+      }
+    }
+  ],
+  "edges": []
+}

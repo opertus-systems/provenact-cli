@@ -1,0 +1,36 @@
+{
+  "schema_version": "v0",
+  "pipeline_id": "com.opertus.demo.cycle",
+  "nodes": [
+    {
+      "id": "a",
+      "skill": "com.opertus.a@0.1.0"
+    },
+    {
+      "id": "b",
+      "skill": "com.opertus.b@0.1.0"
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "b",
+      "map": [
+        {
+          "from_path": "$.x",
+          "to_path": "$.x"
+        }
+      ]
+    },
+    {
+      "from": "b",
+      "to": "a",
+      "map": [
+        {
+          "from_path": "$.y",
+          "to_path": "$.y"
+        }
+      ]
+    }
+  ]
+}

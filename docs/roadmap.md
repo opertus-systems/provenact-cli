@@ -11,7 +11,7 @@ Goal:
 - Deterministically validate bundle integrity and signatures.
 
 Work:
-- `inactu-cli verify --bundle <dir> --keys <public-keys.json>`
+- `inactu-cli verify --bundle <dir> --keys <public-keys.json> --keys-digest <sha256:...>`
 - `inactu-cli inspect --bundle <dir>`
 - Strict parsing of manifest/signature data and digest format checks.
 
@@ -104,6 +104,65 @@ Exit evidence:
 
 - Policy plugin interfaces with strict trust-boundary preservation.
 - Optional transparency log integration for published bundles.
+
+## Security-First Execution Plan (Active)
+
+This plan prioritizes hard security gates before new feature surface.
+
+### P0: End-to-End Trust Chain Enforcement
+
+Goal:
+- Make trust-anchor pinning and signature verification non-optional on the golden path.
+
+Current:
+- `verify` and `run` require `--keys-digest`.
+- Integration tests cover missing-digest denial for both commands.
+- Operator runbook published: `docs/key-management.md`.
+- CI command-example gate published: `scripts/check-keys-digest-usage.sh`.
+
+Next:
+- Add key-rotation drill fixture and release checklist linkage.
+- Extend command-example gate to shell scripts outside this repository root.
+
+### P1: Capability and Policy Operations Hardening
+
+Goal:
+- Keep default-deny enforcement strict while improving policy operations.
+
+Next:
+- Add staged policy rollout modes (`audit`, `warn`, `enforce`) design doc.
+- Add regression vectors for policy exception handling and signer-set drift.
+
+### P2: Receipt and Replay Readiness
+
+Goal:
+- Improve incident/debug value of receipts without weakening determinism.
+
+Next:
+- Define deterministic replay contract and minimal replay CLI prototype.
+- Add receipt correlation-id guidance to observability docs.
+
+## Immediate Next Work (Focus Lock)
+
+This section defines the next execution sequence to keep the product focused.
+
+1. Freeze v1 boundary docs:
+- finalize scope and non-goals in `SPEC.md`
+- keep agent/orchestration features out of this repository
+
+2. Ship one golden workflow:
+- ensure `pack -> sign -> verify -> run -> receipt-verify` is documented and
+  tested as the default operator path
+- prioritize UX and deterministic failure modes in CLI output
+
+3. Turn RFC drafts into concrete draft schemas:
+- `spec/rfcs/skill-manifest-v1.md` -> experimental schema draft
+- `spec/rfcs/execution-receipt-v1.md` -> experimental schema draft
+- add positive/negative vectors for both drafts
+
+4. Hold adapter work until gate conditions pass:
+- no adapter implementation before schema + conformance gates are satisfied
+- when started, implement only one thin reference adapter first
 
 ## Out of Scope Here
 

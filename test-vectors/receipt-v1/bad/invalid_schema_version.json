@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.1",
+  "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "manifest_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "policy_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "inputs_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "outputs_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "caps_requested": [],
+  "caps_granted": [],
+  "caps_used": [],
+  "result": {
+    "status": "success",
+    "code": "ok"
+  },
+  "runtime": {
+    "name": "inactu-runtime",
+    "version": "0.1.0"
+  },
+  "started_at": 1738848000,
+  "finished_at": 1738848001,
+  "receipt_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+}

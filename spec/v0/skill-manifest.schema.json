@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Inactu Skill Manifest v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "skill_id",
+    "version",
+    "entrypoint",
+    "description",
+    "inputs",
+    "outputs",
+    "caps",
+    "limits"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v0"
+    },
+    "skill_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9][a-z0-9_-]*)+$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+    },
+    "entrypoint": {
+      "type": "object",
+      "required": ["wasm", "wasi"],
+      "additionalProperties": false,
+      "properties": {
+        "wasm": { "type": "string", "minLength": 1 },
+        "wasi": {
+          "type": "string",
+          "enum": ["preview2"]
+        }
+      }
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputs": {
+      "$ref": "#/definitions/io_descriptor"
+    },
+    "outputs": {
+      "$ref": "#/definitions/io_descriptor"
+    },
+    "caps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/capability"
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": ["cpu_ms", "mem_mb", "io_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "cpu_ms": { "type": "integer", "minimum": 1 },
+        "mem_mb": { "type": "integer", "minimum": 1 },
+        "io_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "supply_chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sbom": { "type": "string", "minLength": 1 },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "io_descriptor": {
+      "type": "object",
+      "required": ["content_type", "json_schema"],
+      "additionalProperties": false,
+      "properties": {
+        "content_type": { "type": "string", "minLength": 1 },
+        "json_schema": {
+          "type": "object"
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "required": ["name", "required", "constraints"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "fs.read",
+            "fs.write",
+            "fs.temp",
+            "net.http",
+            "clock.read",
+            "crypto.hash",
+            "kv.get",
+            "kv.put",
+            "llm.call",
+            "hitl.request"
+          ]
+        },
+        "required": { "type": "boolean" },
+        "constraints": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

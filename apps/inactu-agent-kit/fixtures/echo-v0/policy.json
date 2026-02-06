@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "trusted_signers": ["alice.dev"],
+  "capability_ceiling": {
+    "exec": false,
+    "time": false
+  }
+}

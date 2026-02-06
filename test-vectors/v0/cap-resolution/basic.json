@@ -1,0 +1,71 @@
+{
+  "name": "v0 capability intersection",
+  "cases": [
+    {
+      "requested": [
+        {
+          "name": "net.http",
+          "required": true,
+          "constraints": {
+            "domains": ["example.com"],
+            "methods": ["GET"]
+          }
+        }
+      ],
+      "org_policy": [
+        {
+          "name": "net.http",
+          "constraints": {
+            "domains": ["example.com"]
+          }
+        }
+      ],
+      "run_policy": [
+        {
+          "name": "net.http",
+          "constraints": {
+            "max_bytes": 2000000
+          }
+        }
+      ],
+      "expect": "allow",
+      "expected_names": ["net.http"]
+    },
+    {
+      "requested": [
+        {
+          "name": "llm.call",
+          "required": true,
+          "constraints": {
+            "model": "gpt-4o-mini"
+          }
+        }
+      ],
+      "org_policy": [],
+      "run_policy": [
+        {
+          "name": "llm.call",
+          "constraints": {
+            "model": "gpt-4o-mini"
+          }
+        }
+      ],
+      "expect": "deny"
+    },
+    {
+      "requested": [
+        {
+          "name": "kv.get",
+          "required": false,
+          "constraints": {
+            "namespace": "cache"
+          }
+        }
+      ],
+      "org_policy": [],
+      "run_policy": [],
+      "expect": "allow",
+      "expected_names": []
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": "v0",
+  "pipeline_id": "com.opertus.demo.pinned_hash_string",
+  "nodes": [
+    {
+      "id": "fetch",
+      "skill": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "id": "parse",
+      "skill": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ],
+  "edges": [
+    {
+      "from": "fetch",
+      "to": "parse",
+      "map": [
+        {
+          "from_path": "$.body",
+          "to_path": "$.html"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": "v0",
+  "pipeline_id": "com.opertus.demo.invalid_path",
+  "nodes": [
+    {
+      "id": "fetch",
+      "skill": "com.opertus.fetch_url@0.1.0"
+    },
+    {
+      "id": "parse",
+      "skill": "com.opertus.parse_html@0.1.0"
+    }
+  ],
+  "edges": [
+    {
+      "from": "fetch",
+      "to": "parse",
+      "map": [
+        {
+          "from_path": "$.body[*]",
+          "to_path": "$.html"
+        }
+      ]
+    }
+  ]
+}

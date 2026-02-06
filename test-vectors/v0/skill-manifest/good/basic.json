@@ -1,0 +1,43 @@
+{
+  "schema_version": "v0",
+  "skill_id": "com.opertus.fetch_url",
+  "version": "0.1.0",
+  "entrypoint": {
+    "wasm": "skill.wasm",
+    "wasi": "preview2"
+  },
+  "description": "Fetch a URL with policy-scoped HTTP.",
+  "inputs": {
+    "content_type": "application/json",
+    "json_schema": {
+      "$ref": "#/schemas/FetchInput"
+    }
+  },
+  "outputs": {
+    "content_type": "application/json",
+    "json_schema": {
+      "$ref": "#/schemas/FetchOutput"
+    }
+  },
+  "caps": [
+    {
+      "name": "net.http",
+      "required": true,
+      "constraints": {
+        "domains": ["example.com"],
+        "methods": ["GET"],
+        "max_bytes": 2000000,
+        "timeout_ms": 15000
+      }
+    }
+  ],
+  "limits": {
+    "cpu_ms": 1000,
+    "mem_mb": 128,
+    "io_bytes": 5000000
+  },
+  "supply_chain": {
+    "sbom": "sbom.spdx.json",
+    "signatures": ["sigstore.bundle.json"]
+  }
+}

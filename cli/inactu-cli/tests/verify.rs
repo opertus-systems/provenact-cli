@@ -16,6 +16,10 @@ fn verify_succeeds_for_good_vector() {
         .arg(&bundle)
         .args(["--keys"])
         .arg(&keys)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys).expect("keys should exist"),
+        ))
         .output()
         .expect("command should run");
     assert!(output.status.success(), "{:?}", output);
@@ -31,6 +35,10 @@ fn verify_succeeds_for_pack_sign_roundtrip_vector() {
         .arg(&bundle)
         .args(["--keys"])
         .arg(&keys)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys).expect("keys should exist"),
+        ))
         .output()
         .expect("command should run");
     assert!(output.status.success(), "{:?}", output);
@@ -46,6 +54,10 @@ fn verify_fails_for_hash_mismatch_vector() {
         .arg(&bundle)
         .args(["--keys"])
         .arg(&keys)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys).expect("keys should exist"),
+        ))
         .output()
         .expect("command should run");
     assert!(!output.status.success(), "{:?}", output);
@@ -61,6 +73,10 @@ fn verify_fails_for_bad_signature_vector() {
         .arg(&bundle)
         .args(["--keys"])
         .arg(&keys)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys).expect("keys should exist"),
+        ))
         .output()
         .expect("command should run");
     assert!(!output.status.success(), "{:?}", output);
@@ -135,6 +151,10 @@ fn verify_fails_for_oversized_keys_file() {
         .arg(&bundle)
         .args(["--keys"])
         .arg(&keys)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys).expect("keys should exist"),
+        ))
         .output()
         .expect("command should run");
     assert!(!output.status.success(), "{:?}", output);
@@ -143,4 +163,21 @@ fn verify_fails_for_oversized_keys_file() {
         stderr.contains("public-keys.json exceeds maximum size"),
         "stderr was: {stderr}"
     );
+}
+
+#[test]
+fn verify_requires_keys_digest_flag() {
+    let root = vectors_root();
+    let bundle = root.join("good/minimal-zero-cap");
+    let keys = bundle.join("public-keys.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_inactu-cli"))
+        .args(["verify", "--bundle"])
+        .arg(&bundle)
+        .args(["--keys"])
+        .arg(&keys)
+        .output()
+        .expect("command should run");
+    assert!(!output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf8");
+    assert!(stderr.contains("usage:"), "stderr was: {stderr}");
 }

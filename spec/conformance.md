@@ -35,6 +35,7 @@ Implementations MUST compute and verify hashes per `spec/hashing.md`.
 At minimum:
 - artifact hash verification
 - registry snapshot hash verification
+- registry snapshot entry digest validation (`sha256` + `md5` format)
 - execution receipt hash verification
 
 Required vector outcomes:
@@ -43,6 +44,14 @@ Required vector outcomes:
   - `test-vectors/receipt/good/valid.json`
 - MUST reject:
   - `test-vectors/receipt/bad/hash-mismatch.json`
+
+Registry snapshot required vector outcomes:
+
+- MUST accept:
+  - `test-vectors/registry/snapshot/good/basic.json`
+- MUST reject:
+  - `test-vectors/registry/snapshot/bad/hash-mismatch.json`
+  - `test-vectors/registry/snapshot/bad/invalid_entry_digest.json`
 
 ## 4. Verification Gate Conformance
 
@@ -64,6 +73,25 @@ The v0 CLI implementation MUST demonstrate an end-to-end flow:
 Required vector outcome:
 
 - `test-vectors/good/verify-run-verify-receipt/` MUST pass the sequence above.
+
+## 6. Install/Store Conformance
+
+Implementations MUST enforce install semantics in `spec/install.md`.
+
+At minimum:
+- install identity is `sha256(raw skill.tar.zst bytes)`
+- required package files (`manifest.json`, `skill.wasm`) are enforced
+- `manifest.artifact` matches bundled `skill.wasm` digest
+- local content is persisted under `store/sha256/<hash>/`
+- local index metadata is maintained and schema-valid
+
+Required implementation outcomes:
+- `inactu-cli tests/archive.rs::archive_is_deterministic_and_canonical` MUST pass.
+- `inactu-cli tests/install.rs::install_persists_store_and_index` MUST pass.
+- `inactu-cli tests/install.rs::install_rejects_oci_refs_in_v0` MUST pass.
+- `inactu-cli tests/install.rs::install_accepts_file_url_source` MUST pass.
+- `inactu-cli tests/install.rs::install_accepts_http_source` MUST pass.
+- `inactu-cli tests/install.rs::install_rejects_missing_manifest_in_archive` MUST pass.
 
 ## Conformance Command
 

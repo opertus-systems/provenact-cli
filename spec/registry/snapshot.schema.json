@@ -20,10 +20,23 @@
     "entries": {
       "type": "object",
       "additionalProperties": {
-        "type": "string",
-        "pattern": "^sha256:[0-9a-f]{64}$"
+        "type": "object",
+        "required": [
+          "sha256",
+          "md5"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "md5": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          }
+        }
       }
     }
   }
 }
-

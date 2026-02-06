@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0-draft",
+  "id": "inactu.echo.minimal",
+  "name": "echo.minimal",
+  "version": "0.1.0",
+  "entrypoint": "run",
+  "artifact": "sha256:xyz",
+  "inputs_schema": {
+    "type": "object"
+  },
+  "outputs_schema": {
+    "type": "object"
+  },
+  "capabilities": [],
+  "signers": [
+    "alice.dev"
+  ]
+}

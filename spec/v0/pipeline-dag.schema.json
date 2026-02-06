@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Inactu Pipeline DAG v0",
+  "type": "object",
+  "required": ["schema_version", "pipeline_id", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v0"
+    },
+    "pipeline_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/edge"
+      }
+    },
+    "run_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "no_network_after_nodes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "max_total_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "redaction": {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["strict", "permissive"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "node": {
+      "type": "object",
+      "required": ["id", "skill"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "skill": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "$ref": "#/definitions/pinned_skill_ref" }
+          ]
+        },
+        "input": { "type": "object" },
+        "on_error": {
+          "type": "string",
+          "enum": ["abort", "skip"]
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to", "map"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "map": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/map_rule"
+          }
+        }
+      }
+    },
+    "map_rule": {
+      "type": "object",
+      "required": ["from_path", "to_path"],
+      "additionalProperties": false,
+      "properties": {
+        "from_path": {
+          "type": "string",
+          "pattern": "^\\$\\.[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$"
+        },
+        "to_path": {
+          "type": "string",
+          "pattern": "^\\$\\.[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$"
+        }
+      }
+    },
+    "pinned_skill_ref": {
+      "type": "object",
+      "required": ["hash"],
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

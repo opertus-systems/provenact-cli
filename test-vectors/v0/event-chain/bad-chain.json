@@ -1,0 +1,33 @@
+{
+  "name": "v0 invalid event chain",
+  "events": [
+    {
+      "ts": "2026-02-06T16:12:43Z",
+      "run_id": "run-001",
+      "node_id": "fetch",
+      "type": "node.start",
+      "data": {
+        "input_bytes": 42
+      },
+      "integrity": {
+        "prev_hash": null,
+        "hash": "sha256:8e85f3b54f8af7530748c2057651d204fbe85f09150efce241e24eac0f6f1ca9"
+      }
+    },
+    {
+      "ts": "2026-02-06T16:12:44Z",
+      "run_id": "run-001",
+      "node_id": "fetch",
+      "type": "cap.net.http",
+      "data": {
+        "domain": "example.com",
+        "method": "GET",
+        "bytes": 12345
+      },
+      "integrity": {
+        "prev_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "hash": "sha256:95cb3abbf7dd6f13ad383818be60f4950678dcf8bad4173f4431a8f5d03cc89d"
+      }
+    }
+  ]
+}

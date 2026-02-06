@@ -1,0 +1,80 @@
+name: Release Skill
+
+on:
+  workflow_dispatch:
+    inputs:
+      oci_ref:
+        description: OCI reference to publish (for example ghcr.io/org/skill:0.1.0)
+        required: true
+        type: string
+
+jobs:
+  release-skill:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    env:
+      OCI_REF: ${{ inputs.oci_ref }}
+      COSIGN_YES: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@ad397744b0d591a723ab90405b7247fac0e6b8db
+
+      - name: Run conformance
+        run: cargo conformance
+
+      - name: Run inactu-cli tests
+        run: cargo test -p inactu-cli
+
+      - name: Prepare demo bundle artifact
+        run: |
+          mkdir -p dist
+          cp test-vectors/good/pack-sign-roundtrip/skill.wasm dist/skill.wasm
+          cp test-vectors/good/pack-sign-roundtrip/manifest.json dist/manifest.json
+          cp test-vectors/good/pack-sign-roundtrip/signatures.json dist/signatures.json
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@28d71544de8eaf1b958d335707167c5f783590ad
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@e6c2c5e321ed9123bda567646e2f96565e34abe1
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb
+
+      - name: Generate SPDX SBOM
+        run: syft dir:./dist -o spdx-json > dist/sbom.spdx.json
+
+      - name: Vulnerability gate
+        run: trivy fs --exit-code 1 --severity HIGH,CRITICAL ./dist
+
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push OCI artifact
+        run: |
+          oras push "$OCI_REF" \
+            --artifact-type application/vnd.inactu.bundle.v1 \
+            dist/skill.wasm:application/wasm \
+            dist/manifest.json:application/json \
+            dist/signatures.json:application/json
+
+      - name: Attach SBOM
+        run: oras attach "$OCI_REF" --artifact-type application/spdx+json dist/sbom.spdx.json
+
+      - name: Sign OCI artifact
+        run: cosign sign "$OCI_REF"
+
+      - name: Verify OCI artifact signature
+        run: cosign verify "$OCI_REF"

@@ -43,6 +43,9 @@ The host operating system is assumed to be trusted but not omnipotent.
 A full threat model is maintained in:
 - `spec/threat-model.md`
 
+Key lifecycle operations are documented in:
+- `docs/key-management.md`
+
 ---
 
 ## Security Goals

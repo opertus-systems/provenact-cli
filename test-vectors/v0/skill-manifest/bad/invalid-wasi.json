@@ -1,0 +1,28 @@
+{
+  "schema_version": "v0",
+  "skill_id": "com.opertus.fetch_url",
+  "version": "0.1.0",
+  "entrypoint": {
+    "wasm": "skill.wasm",
+    "wasi": "preview1"
+  },
+  "description": "Fetch a URL with policy-scoped HTTP.",
+  "inputs": {
+    "content_type": "application/json",
+    "json_schema": {
+      "type": "object"
+    }
+  },
+  "outputs": {
+    "content_type": "application/json",
+    "json_schema": {
+      "type": "object"
+    }
+  },
+  "caps": [],
+  "limits": {
+    "cpu_ms": 1000,
+    "mem_mb": 128,
+    "io_bytes": 5000000
+  }
+}

@@ -2,6 +2,17 @@
 
 This directory contains deterministic conformance vectors for v0.
 
+## Composable Skills v0 Vectors
+
+- `v0/skill-manifest/{good,bad}/`:
+  - v0 skill manifest vectors aligned to `spec/v0/skill-manifest.schema.json`.
+- `v0/pipeline/{good,bad}/`:
+  - v0 pipeline DAG vectors aligned to `spec/v0/pipeline-dag.schema.json`.
+- `v0/event-chain/`:
+  - deterministic event hashing and hash-chain verification vectors.
+- `v0/cap-resolution/`:
+  - capability intersection vectors for `manifest_caps ∩ org_policy ∩ run_policy`.
+
 ## Policy Schema Vectors
 
 - `policy/valid/`:
@@ -69,10 +80,25 @@ Each bundle vector includes `public-keys.json` for `inactu-cli verify`.
     `spec/skill-format/signatures.schema.json`.
 - `skill-format/signatures/bad/`:
   - signature envelope documents expected to fail schema-aligned parsing.
+- `skill-format/manifest-v1/good/`:
+  - draft manifest documents expected to satisfy
+    `spec/skill-format/manifest.v1.experimental.schema.json`.
+- `skill-format/manifest-v1/bad/`:
+  - draft manifest documents expected to fail draft schema validation.
+
+## Receipt v1 Draft Vectors
+
+- `receipt-v1/good/`:
+  - draft receipt documents expected to satisfy
+    `spec/execution-receipt.v1.experimental.schema.json`.
+- `receipt-v1/bad/`:
+  - draft receipt documents expected to fail draft schema validation.
 
 ## Registry Snapshot Vectors
 
 - `registry/snapshot/good/`:
   - snapshots expected to parse and pass `snapshot_hash` verification.
+  - each entry includes required `sha256` identity + `md5` transport checksum.
 - `registry/snapshot/bad/`:
   - snapshots expected to fail parsing or hash verification.
+  - includes invalid entry digest structure/format cases.

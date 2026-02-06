@@ -1,10 +1,17 @@
-# Getting Started (Secure v0 Flow)
+# Getting Started (Secure v0.1 Flow)
 
 This guide shows the recommended signed execution flow for Inactu v0.
 
 Prereqs:
 - Rust toolchain installed
 - Build the CLI once: `cargo build -p inactu-cli`
+- Optional (for cosign-gated verify/run): `cosign` installed locally
+
+Recommended local bootstrap:
+
+```bash
+./scripts/bootstrap-local.sh
+```
 
 ## 1) Prepare Files
 
@@ -49,6 +56,17 @@ cargo run -p inactu-cli -- verify \
   --keys-digest "$KEYS_DIGEST"
 ```
 
+Optional cosign-gated verify:
+
+```bash
+cargo run -p inactu-cli -- verify \
+  --bundle ./bundle \
+  --keys ./public-keys.json \
+  --keys-digest "$KEYS_DIGEST" \
+  --require-cosign \
+  --oci-ref ghcr.io/<org>/<skill>:<tag>
+```
+
 ## 6) Run with Policy
 
 ```bash
@@ -59,6 +77,20 @@ cargo run -p inactu-cli -- run \
   --policy ./policy.json \
   --input ./input.json \
   --receipt ./receipt.json
+```
+
+Optional cosign-gated run:
+
+```bash
+cargo run -p inactu-cli -- run \
+  --bundle ./bundle \
+  --keys ./public-keys.json \
+  --keys-digest "$KEYS_DIGEST" \
+  --policy ./policy.json \
+  --input ./input.json \
+  --receipt ./receipt.json \
+  --require-cosign \
+  --oci-ref ghcr.io/<org>/<skill>:<tag>
 ```
 
 ## 7) Verify Receipt
@@ -72,4 +104,16 @@ cargo run -p inactu-cli -- verify-receipt --receipt ./receipt.json
 - `verify` and `run` reject unsigned bundles.
 - Runtime execution is fuel-metered and resource-limited.
 - File sizes are bounded for untrusted inputs.
-- If `--keys-digest` is provided and mismatches, execution is denied.
+- `--keys-digest` is required for `verify` and `run`; mismatches deny execution.
+- `pack` writes `bundle-meta.json` for deterministic bundle metadata linkage.
+- Key rotation/revocation operations are in `docs/key-management.md`.
+
+## Useful Local Shortcuts
+
+From repo root:
+
+```bash
+make bootstrap
+make flow
+make flow-cosign OCI_REF=ghcr.io/<org>/<skill>:<tag>
+```

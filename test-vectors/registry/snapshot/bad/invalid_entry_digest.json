@@ -1,7 +1,10 @@
 {
-  "snapshot_hash": "sha256:0a222ea86e9139e5bd3aa58eeb2b35abfe1402d9b7758ef91e20d2c6119f35af",
+  "snapshot_hash": "sha256:b4e3ff5bf3b3649766a069b7d66e0ee62bddfa5f706a6679a0634841f0d5e2d7",
   "timestamp": 1738600999,
   "entries": {
-    "echo@1.0.0": "sha256:XYZ"
+    "echo@1.0.0": {
+      "sha256": "sha256:XYZ",
+      "md5": "11111111111111111111111111111111"
+    }
   }
 }

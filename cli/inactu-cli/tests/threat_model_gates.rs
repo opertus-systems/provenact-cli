@@ -52,6 +52,10 @@ fn gate_tampered_artifact_is_rejected() {
         .arg(&bundle)
         .args(["--keys"])
         .arg(&keys)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys).expect("keys should exist"),
+        ))
         .output()
         .expect("verify should run");
     assert!(!output.status.success(), "{:?}", output);
@@ -67,6 +71,10 @@ fn gate_bad_signature_is_rejected() {
         .arg(&bundle)
         .args(["--keys"])
         .arg(&keys)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys).expect("keys should exist"),
+        ))
         .output()
         .expect("verify should run");
     assert!(!output.status.success(), "{:?}", output);
@@ -138,6 +146,10 @@ capability_ceiling:
         .arg(&bundle_dir)
         .args(["--keys"])
         .arg(&keys_path)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys_path).expect("keys should exist"),
+        ))
         .args(["--policy"])
         .arg(&policy_path)
         .args(["--input"])
@@ -219,6 +231,10 @@ fn gate_successful_run_produces_auditable_receipt() {
         .arg(&bundle_dir)
         .args(["--keys"])
         .arg(&keys_path)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys_path).expect("keys should exist"),
+        ))
         .args(["--policy"])
         .arg(&policy_path)
         .args(["--input"])

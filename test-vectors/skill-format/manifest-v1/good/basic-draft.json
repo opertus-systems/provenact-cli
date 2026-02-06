@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0-draft",
+  "id": "inactu.echo.minimal",
+  "name": "echo.minimal",
+  "version": "0.1.0",
+  "entrypoint": "run",
+  "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "inputs_schema": {
+    "type": "object",
+    "required": ["msg"],
+    "properties": {
+      "msg": {
+        "type": "string"
+      }
+    }
+  },
+  "outputs_schema": {
+    "type": "object",
+    "required": ["ok"],
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      }
+    }
+  },
+  "capabilities": [
+    {
+      "kind": "net",
+      "value": "https://example.com"
+    }
+  ],
+  "signers": [
+    "alice.dev"
+  ],
+  "compatibility": {
+    "runtime_profiles": [
+      "inactu-runtime/v1"
+    ],
+    "adapter_profiles": [
+      "none"
+    ]
+  }
+}

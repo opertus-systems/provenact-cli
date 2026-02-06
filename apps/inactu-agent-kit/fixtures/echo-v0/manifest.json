@@ -1,0 +1,8 @@
+{
+  "name": "echo.e2e",
+  "version": "0.1.0",
+  "entrypoint": "run",
+  "artifact": "sha256:c9e2d2c87ed55e68710f8ba626e6787518a9d544e6502c24d6a319631e15590a",
+  "capabilities": [],
+  "signers": ["alice.dev"]
+}
