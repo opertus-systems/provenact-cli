@@ -8,7 +8,7 @@ autobins = false
 
 [[bin]]
 name = "provenact"
-path = "src/main.rs"
+path = "src/main_provenact.rs"
 
 [[bin]]
 name = "provenact-cli"
