@@ -4,11 +4,17 @@ use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
-use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+use std::{
+    fs::Permissions,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    time::Duration,
+};
+#[cfg(not(unix))]
+use std::time::Duration;
 
 use getrandom::fill as random_fill_os;
 use provenact_verifier::{sha256_prefixed, Capability};
@@ -34,6 +40,11 @@ pub struct ExecutionOutcome {
     pub outputs: Vec<u8>,
     pub caps_used: Vec<String>,
 }
+
+const MAX_FS_TREE_ENTRIES: usize = 2048;
+const MAX_FS_TREE_DEPTH: usize = 64;
+const MAX_QUEUE_MESSAGE_BYTES: usize = 1_048_576;
+const NET_HTTP_TIMEOUT_SECS: u64 = 10;
 
 pub fn execute_wasm(
     wasm: &[u8],
@@ -264,23 +275,38 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             require_fs_path_capability(&mut caller, "fs.read", &root_norm, "fs.read", false)?;
 
             let mut entries = Vec::new();
-            collect_tree_entries(Path::new(&root_norm), Path::new(&root_norm), &mut entries)?;
+            let mut truncated = false;
+            collect_tree_entries(
+                Path::new(&root_norm),
+                Path::new(&root_norm),
+                &mut entries,
+                &mut truncated,
+                0,
+            )?;
             entries.sort_by(|a, b| {
                 let ap = a["path"].as_str().unwrap_or_default();
                 let bp = b["path"].as_str().unwrap_or_default();
                 ap.cmp(bp)
             });
-            let body = json!({
-                "root": root_norm,
-                "entries": entries,
-                "truncated": false
-            });
-            let encoded =
-                serde_json::to_vec(&body).map_err(|e| anyhow!("json encode failed: {e}"))?;
-            if encoded.len() > out_len as usize {
-                return Ok(-1);
+
+            let max_output = out_len as usize;
+            loop {
+                let body = json!({
+                    "root": root_norm,
+                    "entries": &entries,
+                    "truncated": truncated
+                });
+                let encoded =
+                    serde_json::to_vec(&body).map_err(|e| anyhow!("json encode failed: {e}"))?;
+                if encoded.len() <= max_output {
+                    return Ok(write_to_memory(&mut caller, out_ptr as usize, &encoded).unwrap_or(-1));
+                }
+                if entries.is_empty() {
+                    return Ok(-1);
+                }
+                entries.pop();
+                truncated = true;
             }
-            Ok(write_to_memory(&mut caller, out_ptr as usize, &encoded).unwrap_or(-1))
         },
     )?;
 
@@ -351,7 +377,11 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
                 },
                 "net.http",
             )?;
-            let response = match ureq::get(&url).call() {
+            let agent = ureq::Agent::config_builder()
+                .timeout_global(Some(Duration::from_secs(NET_HTTP_TIMEOUT_SECS)))
+                .build()
+                .new_agent();
+            let response = match agent.get(&url).call() {
                 Ok(v) => v,
                 Err(_) => return Ok(-1),
             };
@@ -523,28 +553,30 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
                 Ok(f) => f,
                 Err(_) => return Ok(-1),
             };
-            let reader = BufReader::new(file);
-            let mut lines = reader
-                .lines()
-                .collect::<Result<Vec<_>, _>>()
-                .unwrap_or_default();
-            if lines.is_empty() {
-                return Ok(-1);
-            }
-            let first = lines.remove(0);
-            let payload = match STANDARD.decode(first.as_bytes()) {
+            let mut reader = BufReader::new(file);
+            let mut first_line = String::new();
+            let read = match reader.read_line(&mut first_line) {
                 Ok(v) => v,
                 Err(_) => return Ok(-1),
             };
+            if read == 0 {
+                return Ok(-1);
+            }
+            let encoded = first_line.trim_end_matches(&['\r', '\n'][..]);
+            if encoded.is_empty() {
+                return Ok(-1);
+            }
+            let payload = match STANDARD.decode(encoded.as_bytes()) {
+                Ok(v) => v,
+                Err(_) => return Ok(-1),
+            };
+            if payload.len() > MAX_QUEUE_MESSAGE_BYTES {
+                return Ok(-1);
+            }
             if payload.len() > out_len as usize {
                 return Ok(-1);
             }
-            let rewritten = if lines.is_empty() {
-                String::new()
-            } else {
-                format!("{}\n", lines.join("\n"))
-            };
-            if secure_write_bytes(&path, rewritten.as_bytes()).is_err() {
+            if rewrite_file_from_reader(&path, &mut reader).is_err() {
                 return Ok(-1);
             }
             Ok(write_to_memory(&mut caller, out_ptr as usize, &payload).unwrap_or(-1))
@@ -787,25 +819,137 @@ fn secure_write_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
             return Err(std::io::Error::other("refusing to write through symlink"));
         }
     }
-    let mut temp = path.to_path_buf();
-    temp.set_extension("tmp");
-    if let Ok(meta) = fs::symlink_metadata(&temp) {
-        if meta.file_type().is_symlink() {
-            return Err(std::io::Error::other(
-                "refusing to write through symlink temp path",
-            ));
+    let (temp, mut file) = open_secure_temp_file(path)?;
+    let write_result = (|| -> io::Result<()> {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&temp, path)?;
+        if let Some(parent) = path.parent() {
+            sync_dir(parent);
+        }
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    write_result?;
+    Ok(())
+}
+
+fn rewrite_file_from_reader<R: Read>(path: &Path, reader: &mut R) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        {
+            let _ = fs::set_permissions(parent, Permissions::from_mode(0o700));
         }
     }
-    fs::write(&temp, bytes)?;
-    fs::rename(temp, path)?;
+    if let Ok(meta) = fs::symlink_metadata(path) {
+        if meta.file_type().is_symlink() {
+            return Err(std::io::Error::other("refusing to write through symlink"));
+        }
+    }
+    let (temp, mut file) = open_secure_temp_file(path)?;
+    let write_result = (|| -> io::Result<()> {
+        io::copy(reader, &mut file)?;
+        file.sync_all()?;
+        fs::rename(&temp, path)?;
+        if let Some(parent) = path.parent() {
+            sync_dir(parent);
+        }
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    write_result?;
     Ok(())
+}
+
+fn open_secure_temp_file(path: &Path) -> std::io::Result<(PathBuf, fs::File)> {
+    for attempt in 0..16 {
+        let temp = unique_temp_path(path, attempt)?;
+        if let Ok(meta) = fs::symlink_metadata(&temp) {
+            if meta.file_type().is_symlink() {
+                return Err(std::io::Error::other(
+                    "refusing to write through symlink temp path",
+                ));
+            }
+        }
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            options.mode(0o600);
+        }
+        match options.open(&temp) {
+            Ok(file) => return Ok((temp, file)),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err),
+        }
+    }
+    Err(std::io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "failed to allocate unique secure temp file",
+    ))
+}
+
+fn unique_temp_path(path: &Path, attempt: u8) -> std::io::Result<PathBuf> {
+    let mut random = [0_u8; 8];
+    random_fill_os(&mut random)
+        .map_err(|err| std::io::Error::other(format!("temp random generation failed: {err}")))?;
+    let random_hex = random
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let mut name = path
+        .file_name()
+        .map(|value| value.to_os_string())
+        .unwrap_or_else(|| "tmp".into());
+    name.push(format!(".{random_hex}.{attempt}.tmp"));
+    Ok(path.with_file_name(name))
+}
+
+fn sync_dir(path: &Path) {
+    #[cfg(unix)]
+    {
+        if let Ok(dir) = OpenOptions::new().read(true).open(path) {
+            let _ = dir.sync_all();
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+}
+
+fn push_tree_entry(
+    out: &mut Vec<serde_json::Value>,
+    entry: serde_json::Value,
+    truncated: &mut bool,
+) -> bool {
+    if out.len() >= MAX_FS_TREE_ENTRIES {
+        *truncated = true;
+        return false;
+    }
+    out.push(entry);
+    true
 }
 
 fn collect_tree_entries(
     root: &Path,
     current: &Path,
     out: &mut Vec<serde_json::Value>,
+    truncated: &mut bool,
+    depth: usize,
 ) -> anyhow::Result<()> {
+    if *truncated {
+        return Ok(());
+    }
+    if depth > MAX_FS_TREE_DEPTH {
+        *truncated = true;
+        return Ok(());
+    }
     let mut children = fs::read_dir(current)
         .map_err(|e| anyhow!("read_dir failed for {}: {e}", current.display()))?
         .filter_map(Result::ok)
@@ -813,6 +957,9 @@ fn collect_tree_entries(
     children.sort_by_key(|a| a.file_name());
 
     for child in children {
+        if *truncated {
+            break;
+        }
         let path = child.path();
         let meta = fs::symlink_metadata(&path)
             .map_err(|e| anyhow!("metadata failed for {}: {e}", path.display()))?;
@@ -825,17 +972,29 @@ fn collect_tree_entries(
         };
         let rel_str = rel.to_string_lossy().replace('\\', "/");
         if meta.is_dir() {
-            out.push(json!({
+            if !push_tree_entry(
+                out,
+                json!({
                 "path": rel_str,
                 "kind": "dir"
-            }));
-            collect_tree_entries(root, &path, out)?;
+            }),
+                truncated,
+            ) {
+                break;
+            }
+            collect_tree_entries(root, &path, out, truncated, depth.saturating_add(1))?;
         } else if meta.is_file() {
-            out.push(json!({
+            if !push_tree_entry(
+                out,
+                json!({
                 "path": rel_str,
                 "kind": "file",
                 "bytes": meta.len()
-            }));
+            }),
+                truncated,
+            ) {
+                break;
+            }
         }
     }
     Ok(())
@@ -943,5 +1102,51 @@ mod tests {
         let input = escape_path.to_string_lossy().to_string().into_bytes();
         let result = execute_wasm(&wasm, "run", &input, &capabilities);
         assert!(result.is_err(), "symlink escape should be denied");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn collect_tree_entries_truncates_at_limit() {
+        let root = make_test_dir("fs-read-tree-truncate");
+        for idx in 0..(MAX_FS_TREE_ENTRIES + 25) {
+            let path = root.join(format!("file-{idx}.txt"));
+            fs::write(path, b"x").expect("file write should succeed");
+        }
+
+        let mut entries = Vec::new();
+        let mut truncated = false;
+        collect_tree_entries(&root, &root, &mut entries, &mut truncated, 0)
+            .expect("tree collection should succeed");
+
+        assert!(truncated, "expected collection to report truncation");
+        assert_eq!(
+            entries.len(),
+            MAX_FS_TREE_ENTRIES,
+            "entry count should respect hard limit"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rewrite_file_from_reader_keeps_remaining_queue_lines() {
+        let root = make_test_dir("queue-rewrite-streaming");
+        let queue_file = root.join("queue.log");
+        fs::write(&queue_file, b"first\nsecond\nthird\n").expect("queue file write should succeed");
+
+        let file = OpenOptions::new()
+            .read(true)
+            .open(&queue_file)
+            .expect("queue file should open");
+        let mut reader = BufReader::new(file);
+        let mut first_line = String::new();
+        let bytes = reader
+            .read_line(&mut first_line)
+            .expect("first line should be readable");
+        assert!(bytes > 0, "expected first queue line to exist");
+
+        rewrite_file_from_reader(&queue_file, &mut reader).expect("queue rewrite should succeed");
+
+        let rewritten = fs::read_to_string(&queue_file).expect("queue file should be readable");
+        assert_eq!(rewritten, "second\nthird\n");
     }
 }
