@@ -1102,7 +1102,8 @@ fn verify_cosign_oci_ref(
     cert_identity: &str,
     cert_oidc_issuer: &str,
 ) -> Result<(), String> {
-    let output = Command::new("cosign")
+    let cosign_bin = resolve_cosign_bin()?;
+    let output = Command::new(&cosign_bin)
         .args([
             "verify",
             "--key",
@@ -1123,4 +1124,59 @@ fn verify_cosign_oci_ref(
         return Err(format!("cosign verify failed for {oci_ref}: {stderr}"));
     }
     Ok(())
+}
+
+fn resolve_cosign_bin() -> Result<PathBuf, String> {
+    if let Ok(raw) = env::var("PROVENACT_COSIGN_BIN") {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err("PROVENACT_COSIGN_BIN must not be empty".to_string());
+        }
+        let path = PathBuf::from(trimmed);
+        if path.is_absolute() {
+            return Ok(path);
+        }
+        if let Some(resolved) = resolve_binary_on_path(trimmed) {
+            return Ok(resolved);
+        }
+        if allow_path_cosign_lookup() {
+            return Ok(path);
+        }
+        return Err(
+            "PROVENACT_COSIGN_BIN must be an absolute path or resolvable on PATH; set PROVENACT_ALLOW_PATH_COSIGN=1 to permit direct PATH lookup fallback"
+                .to_string(),
+        );
+    }
+
+    if let Some(resolved) = resolve_binary_on_path("cosign") {
+        return Ok(resolved);
+    }
+    if allow_path_cosign_lookup() {
+        return Ok(PathBuf::from("cosign"));
+    }
+
+    Err(
+        "cosign verification requires cosign to be present on PATH or PROVENACT_COSIGN_BIN set; set PROVENACT_ALLOW_PATH_COSIGN=1 to opt into unresolved PATH lookup"
+            .to_string(),
+    )
+}
+
+fn resolve_binary_on_path(bin: &str) -> Option<PathBuf> {
+    let path_var = env::var_os("PATH")?;
+    for dir in env::split_paths(&path_var) {
+        let candidate = dir.join(bin);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn allow_path_cosign_lookup() -> bool {
+    matches!(
+        env::var("PROVENACT_ALLOW_PATH_COSIGN")
+            .map(|v| v.to_ascii_lowercase())
+            .as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
 }
