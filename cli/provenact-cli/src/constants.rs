@@ -13,3 +13,6 @@ pub const MAX_SKILL_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 pub const MAX_KV_VALUE_BYTES: usize = 1024 * 1024;
 pub const MAX_QUEUE_MESSAGE_BYTES: usize = 256 * 1024;
 pub const MAX_QUEUE_FILE_BYTES: u64 = 8 * 1024 * 1024;
+pub const MAX_HOSTCALL_COPY_BYTES: usize = WASM_MEMORY_LIMIT_BYTES;
+pub const MAX_FS_TREE_ENTRIES: usize = 10_000;
+pub const MAX_FS_TREE_TOTAL_BYTES: u64 = 64 * 1024 * 1024;

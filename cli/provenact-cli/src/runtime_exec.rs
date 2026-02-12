@@ -19,13 +19,14 @@ use wasmtime::{
 };
 
 use crate::constants::{
-    MAX_KV_VALUE_BYTES, MAX_QUEUE_FILE_BYTES, MAX_QUEUE_MESSAGE_BYTES, WASM_FUEL_LIMIT,
-    WASM_INSTANCES_LIMIT, WASM_MEMORIES_LIMIT, WASM_MEMORY_LIMIT_BYTES, WASM_TABLES_LIMIT,
-    WASM_TABLE_ELEMENTS_LIMIT,
+    MAX_FS_TREE_ENTRIES, MAX_FS_TREE_TOTAL_BYTES, MAX_HOSTCALL_COPY_BYTES, MAX_KV_VALUE_BYTES,
+    MAX_QUEUE_FILE_BYTES, MAX_QUEUE_MESSAGE_BYTES, WASM_FUEL_LIMIT, WASM_INSTANCES_LIMIT,
+    WASM_MEMORIES_LIMIT, WASM_MEMORY_LIMIT_BYTES, WASM_TABLES_LIMIT, WASM_TABLE_ELEMENTS_LIMIT,
 };
 
 const PATH_LOCK_RETRIES: usize = 50;
 const PATH_LOCK_RETRY_DELAY_MS: u64 = 10;
+const PATH_LOCK_STALE_SECS: u64 = 120;
 const HTTP_CONNECT_TIMEOUT_SECS: u64 = 5;
 const HTTP_TOTAL_TIMEOUT_SECS: u64 = 10;
 
@@ -193,7 +194,10 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             if ptr < 0 || len < 0 {
                 return Ok(-1);
             }
-            let mut buf = vec![0_u8; len as usize];
+            let Some(fill_len) = bounded_guest_len(len, MAX_HOSTCALL_COPY_BYTES) else {
+                return Ok(-1);
+            };
+            let mut buf = vec![0_u8; fill_len];
             random_fill_os(&mut buf).map_err(|e| anyhow!("random_fill failed: {e}"))?;
             Ok(write_to_memory(&mut caller, ptr as usize, &buf).unwrap_or(-1))
         },
@@ -240,6 +244,9 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             let Some(path_resolved) = resolve_path_for_prefix_check(&path_buf, false) else {
                 return Ok(-1);
             };
+            let Some(max_output) = bounded_guest_out_len(out_len) else {
+                return Ok(-1);
+            };
             require_capability(
                 &mut caller,
                 "fs.read",
@@ -253,11 +260,10 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
                 },
                 "fs.read",
             )?;
-            let data = match fs::read(&path_resolved) {
-                Ok(v) => v,
-                Err(_) => return Ok(-1),
+            let Some(data) = read_file_bytes_capped(&path_resolved, max_output) else {
+                return Ok(-1);
             };
-            if data.len() > out_len as usize {
+            if data.len() > max_output {
                 return Ok(-1);
             }
             Ok(write_to_memory(&mut caller, out_ptr as usize, &data).unwrap_or(-1))
@@ -288,6 +294,9 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             let Some(root_resolved) = resolve_path_for_prefix_check(&root_buf, false) else {
                 return Ok(-1);
             };
+            let Some(max_output) = bounded_guest_out_len(out_len) else {
+                return Ok(-1);
+            };
             if !root_resolved.is_dir() {
                 return Ok(-1);
             }
@@ -306,7 +315,8 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             )?;
 
             let mut entries = Vec::new();
-            collect_tree_entries(&root_resolved, &root_resolved, &mut entries)?;
+            let mut state = TreeCollectionState::default();
+            collect_tree_entries(&root_resolved, &root_resolved, &mut entries, &mut state)?;
             entries.sort_by(|a, b| {
                 let ap = a["path"].as_str().unwrap_or_default();
                 let bp = b["path"].as_str().unwrap_or_default();
@@ -315,11 +325,11 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             let body = json!({
                 "root": root_norm,
                 "entries": entries,
-                "truncated": false
+                "truncated": state.truncated
             });
             let encoded =
                 serde_json::to_vec(&body).map_err(|e| anyhow!("json encode failed: {e}"))?;
-            if encoded.len() > out_len as usize {
+            if encoded.len() > max_output {
                 return Ok(-1);
             }
             Ok(write_to_memory(&mut caller, out_ptr as usize, &encoded).unwrap_or(-1))
@@ -424,15 +434,13 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             if response.status().is_redirection() {
                 return Ok(-1);
             }
-            let mut body = Vec::new();
-            let max = out_len as usize;
-            let mut reader = response.into_body().into_reader().take(max as u64);
-            if reader.read_to_end(&mut body).is_err() {
+            let Some(max_output) = bounded_guest_out_len(out_len) else {
                 return Ok(-1);
-            }
-            if body.len() > max {
+            };
+            let mut reader = response.into_body().into_reader();
+            let Some(body) = read_limited_bytes(&mut reader, max_output) else {
                 return Ok(-1);
-            }
+            };
             Ok(write_to_memory(&mut caller, out_ptr as usize, &body).unwrap_or(-1))
         },
     )?;
@@ -686,6 +694,44 @@ fn write_to_memory(caller: &mut Caller<'_, HostState>, ptr: usize, bytes: &[u8])
     Some(bytes.len() as i32)
 }
 
+fn bounded_guest_len(len: i32, max_allowed: usize) -> Option<usize> {
+    if len < 0 {
+        return None;
+    }
+    let len = len as usize;
+    if len > max_allowed {
+        return None;
+    }
+    Some(len)
+}
+
+fn bounded_guest_out_len(out_len: i32) -> Option<usize> {
+    bounded_guest_len(out_len, MAX_HOSTCALL_COPY_BYTES)
+}
+
+fn read_limited_bytes(reader: &mut impl Read, max_bytes: usize) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    if reader
+        .take((max_bytes as u64).saturating_add(1))
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return None;
+    }
+    if bytes.len() > max_bytes {
+        return None;
+    }
+    Some(bytes)
+}
+
+fn read_file_bytes_capped(path: &Path, max_bytes: usize) -> Option<Vec<u8>> {
+    let mut file = fs::File::open(path).ok()?;
+    if file.metadata().ok()?.len() > max_bytes as u64 {
+        return None;
+    }
+    read_limited_bytes(&mut file, max_bytes)
+}
+
 fn require_capability(
     caller: &mut Caller<'_, HostState>,
     kind: &str,
@@ -862,6 +908,10 @@ fn acquire_path_lock(path: &Path) -> Option<PathLockGuard> {
         {
             Ok(_) => return Some(PathLockGuard { lock_path }),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                if is_stale_lock(&lock_path) {
+                    let _ = fs::remove_file(&lock_path);
+                    continue;
+                }
                 thread::sleep(Duration::from_millis(PATH_LOCK_RETRY_DELAY_MS));
             }
             Err(_) => return None,
@@ -880,11 +930,34 @@ impl Drop for PathLockGuard {
     }
 }
 
+fn is_stale_lock(lock_path: &Path) -> bool {
+    let Ok(meta) = fs::metadata(lock_path) else {
+        return false;
+    };
+    let Ok(modified) = meta.modified() else {
+        return false;
+    };
+    let Ok(age) = modified.elapsed() else {
+        return false;
+    };
+    age.as_secs() > PATH_LOCK_STALE_SECS
+}
+
+#[derive(Default)]
+struct TreeCollectionState {
+    truncated: bool,
+    total_file_bytes: u64,
+}
+
 fn collect_tree_entries(
     root: &Path,
     current: &Path,
     out: &mut Vec<serde_json::Value>,
+    state: &mut TreeCollectionState,
 ) -> anyhow::Result<()> {
+    if state.truncated {
+        return Ok(());
+    }
     let mut children = fs::read_dir(current)
         .map_err(|e| anyhow!("read_dir failed for {}: {e}", current.display()))?
         .filter_map(Result::ok)
@@ -904,12 +977,25 @@ fn collect_tree_entries(
         };
         let rel_str = rel.to_string_lossy().replace('\\', "/");
         if meta.is_dir() {
+            if out.len() >= MAX_FS_TREE_ENTRIES {
+                state.truncated = true;
+                return Ok(());
+            }
             out.push(json!({
                 "path": rel_str,
                 "kind": "dir"
             }));
-            collect_tree_entries(root, &path, out)?;
+            collect_tree_entries(root, &path, out, state)?;
         } else if meta.is_file() {
+            if out.len() >= MAX_FS_TREE_ENTRIES {
+                state.truncated = true;
+                return Ok(());
+            }
+            state.total_file_bytes = state.total_file_bytes.saturating_add(meta.len());
+            if state.total_file_bytes > MAX_FS_TREE_TOTAL_BYTES {
+                state.truncated = true;
+                return Ok(());
+            }
             out.push(json!({
                 "path": rel_str,
                 "kind": "file",
