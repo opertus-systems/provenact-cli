@@ -7,6 +7,7 @@ use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,6 +30,9 @@ const PATH_LOCK_RETRY_DELAY_MS: u64 = 10;
 const PATH_LOCK_STALE_SECS: u64 = 120;
 const HTTP_CONNECT_TIMEOUT_SECS: u64 = 5;
 const HTTP_TOTAL_TIMEOUT_SECS: u64 = 10;
+const SAFE_WRITE_TEMP_ATTEMPTS: usize = 16;
+
+static SAFE_WRITE_NONCE: AtomicU64 = AtomicU64::new(0);
 
 struct HostState {
     limits: StoreLimits,
@@ -377,14 +381,36 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             else {
                 return Ok(-1);
             };
-            if let Some(parent) = path_resolved.parent() {
-                if fs::create_dir_all(parent).is_err() {
-                    return Ok(-1);
-                }
-            }
-            if fs::write(&path_resolved, &bytes).is_err() {
+            let Some(parent) = path_resolved.parent() else {
+                return Ok(-1);
+            };
+            if fs::create_dir_all(parent).is_err() {
                 return Ok(-1);
             }
+            let canonical_parent = match fs::canonicalize(parent) {
+                Ok(value) => value,
+                Err(_) => return Ok(-1),
+            };
+            let Some(file_name) = path_resolved.file_name() else {
+                return Ok(-1);
+            };
+            let final_path = canonical_parent.join(file_name);
+            require_capability(
+                &mut caller,
+                "fs.write",
+                |value| {
+                    normalize_abs_path(value)
+                        .and_then(|p| {
+                            resolve_path_for_prefix_check(Path::new(&p), true)
+                                .map(|prefix| path_buf_within_prefix(&final_path, &prefix))
+                        })
+                        .unwrap_or(false)
+                },
+                "fs.write",
+            )?;
+            if write_file_replace_symlink_safe(&final_path, &bytes).is_err() {
+                return Ok(-1);
+            };
             Ok(0)
         },
     )?;
@@ -818,7 +844,16 @@ fn path_buf_within_prefix(path: &Path, prefix: &Path) -> bool {
 
 fn normalize_uri_path(path: &str) -> Option<String> {
     let raw = if path.is_empty() { "/" } else { path };
+    if raw.contains('\\') || contains_pct_encoded_triplet(raw) {
+        return None;
+    }
     normalize_abs_path(raw)
+}
+
+fn contains_pct_encoded_triplet(value: &str) -> bool {
+    value.as_bytes().windows(3).any(|window| {
+        window[0] == b'%' && window[1].is_ascii_hexdigit() && window[2].is_ascii_hexdigit()
+    })
 }
 
 fn net_uri_within_prefix(requested: &Url, allowed: &Url) -> bool {
@@ -871,6 +906,67 @@ fn queue_file_path(topic: &[u8]) -> PathBuf {
     let digest = sha256_prefixed(topic);
     let suffix = digest.strip_prefix("sha256:").unwrap_or(&digest);
     queue_root().join(format!("{suffix}.log"))
+}
+
+fn write_file_replace_symlink_safe(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let Some(parent) = path.parent() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path has no parent",
+        ));
+    };
+
+    for _ in 0..SAFE_WRITE_TEMP_ATTEMPTS {
+        let nonce = SAFE_WRITE_NONCE.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let tmp_name = format!(
+            ".{}.tmp.{}.{}.{}",
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("provenact"),
+            std::process::id(),
+            nanos,
+            nonce
+        );
+        let tmp_path = parent.join(tmp_name);
+
+        let mut file = match OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&tmp_path)
+        {
+            Ok(value) => value,
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err),
+        };
+        if let Err(err) = file.write_all(bytes) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(err);
+        }
+        drop(file);
+
+        #[cfg(windows)]
+        {
+            if path.exists() {
+                let _ = fs::remove_file(path);
+            }
+        }
+        match fs::rename(&tmp_path, path) {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                let _ = fs::remove_file(&tmp_path);
+                return Err(err);
+            }
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "failed to allocate temporary write path",
+    ))
 }
 
 fn default_runtime_root(kind: &str) -> PathBuf {
@@ -1004,4 +1100,43 @@ fn collect_tree_entries(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_uri_path_rejects_percent_encoded_bytes() {
+        assert!(normalize_uri_path("/v1/%2f..%2fadmin").is_none());
+        assert!(normalize_uri_path("/v1/%20file").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn safe_write_replaces_symlink_without_touching_target() {
+        let base = std::env::temp_dir().join(format!(
+            "provenact-safe-write-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&base).expect("temp dir should exist");
+
+        let target = base.join("target.txt");
+        fs::write(&target, b"original").expect("target write");
+        let sink = base.join("sink.txt");
+        std::os::unix::fs::symlink(&target, &sink).expect("symlink create");
+
+        write_file_replace_symlink_safe(&sink, b"new-value").expect("safe write");
+
+        assert_eq!(fs::read(&target).expect("target read"), b"original");
+        let sink_meta = fs::symlink_metadata(&sink).expect("sink metadata");
+        assert!(!sink_meta.file_type().is_symlink());
+        assert_eq!(fs::read(&sink).expect("sink read"), b"new-value");
+
+        let _ = fs::remove_dir_all(&base);
+    }
 }
