@@ -19,6 +19,7 @@ anyhow = "1"
 base64 = "0.22"
 ed25519-dalek = "2.1"
 getrandom = "0.4"
+libc = "0.2"
 provenact-verifier = { path = "../../core/verifier" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -1116,6 +1116,7 @@ dependencies = [
  "ed25519-dalek",
  "filetime",
  "getrandom 0.4.1",
+ "libc",
  "provenact-verifier",
  "serde",
  "serde_json",
