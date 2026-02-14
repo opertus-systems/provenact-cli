@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(unix)]
+use std::io::Write;
 use std::path::Path;
 
 pub fn read_file(path: &Path) -> Result<Vec<u8>, String> {
@@ -35,18 +37,44 @@ pub fn read_file_limited(
 }
 
 pub fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            return Err(format!(
-                "refusing to write through symlink: {}",
-                path.display()
-            ))
-        }
-        Ok(_) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(format!("{}: {err}", path.display())),
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+            .map_err(|err| {
+                if err.raw_os_error() == Some(libc::ELOOP) {
+                    format!("refusing to write through symlink: {}", path.display())
+                } else {
+                    format!("{}: {err}", path.display())
+                }
+            })?;
+        file.write_all(bytes)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(())
     }
-    fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+
+    #[cfg(not(unix))]
+    {
+        match fs::symlink_metadata(path) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return Err(format!(
+                    "refusing to write through symlink: {}",
+                    path.display()
+                ))
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(format!("{}: {err}", path.display())),
+        }
+        fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    }
 }
 
 #[cfg(test)]
@@ -72,6 +100,16 @@ mod tests {
         let path = dir.join("regular.txt");
         write_file(&path, b"hello").expect("regular path write should succeed");
         assert_eq!(fs::read(&path).expect("read"), b"hello");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_file_truncates_existing_regular_file() {
+        let dir = test_temp_dir("provenact-fileio-truncate");
+        let path = dir.join("regular.txt");
+        fs::write(&path, b"this-is-longer").expect("seed file write");
+        write_file(&path, b"short").expect("regular path write should truncate");
+        assert_eq!(fs::read(&path).expect("read"), b"short");
         let _ = fs::remove_dir_all(&dir);
     }
 
