@@ -42,7 +42,7 @@ jobs:
           chmod +x ./scripts/check-sync-parity.sh
           ./scripts/check-sync-parity.sh ./sync-manifest.json "$GITHUB_WORKSPACE/provenact-spec"
 
-  conformance-check:
+  conformance:
     runs-on: ubuntu-latest
     needs:
       - sync-spec-check
