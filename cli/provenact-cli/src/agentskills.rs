@@ -350,9 +350,56 @@ fn set_executable_if_unix(path: &Path) -> Result<(), String> {
 
     let metadata = fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut permissions = metadata.permissions();
-    permissions.set_mode(0o755);
+    let mode = permissions.mode();
+    permissions.set_mode(mode | 0o111);
     fs::set_permissions(path, permissions)
         .map_err(|e| format!("failed to set executable bit on {}: {e}", path.display()))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::env;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn test_temp_path(prefix: &str) -> PathBuf {
+        let mut path = env::temp_dir();
+        let pid = std::process::id();
+        path.push(format!("{prefix}-{pid}-{}", path_file_counter()));
+        path
+    }
+
+    fn path_file_counter() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn set_executable_if_unix_preserves_existing_mode_bits() {
+        let path = test_temp_path("provenact-run-sh");
+
+        fs::write(&path, b"").expect("seed file should be writable");
+        fs::set_permissions(
+            &path,
+            fs::Permissions::from_mode(0o640),
+        )
+        .expect("setting baseline mode should work");
+
+        set_executable_if_unix(&path).expect("should mark file executable");
+
+        let mode = fs::metadata(&path)
+            .expect("metadata should be readable")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o751);
+
+        let _ = fs::remove_file(path);
+    }
 }
 
 #[cfg(not(unix))]

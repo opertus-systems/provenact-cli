@@ -1,11 +1,12 @@
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use getrandom::fill as random_fill_os;
 use provenact_verifier::{
     compute_manifest_hash, enforce_capability_ceiling, parse_manifest_json, parse_policy_document,
     parse_signatures_json, sha256_prefixed, verify_signatures,
@@ -507,25 +508,110 @@ fn write_file_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("cannot resolve parent directory for {}", path.display()))?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp_path = parent.join(format!(
-        ".{}.tmp.{}.{nonce}",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("index"),
-        std::process::id()
-    ));
-    write_file(&tmp_path, bytes)?;
-    fs::rename(&tmp_path, path).map_err(|e| {
-        let _ = fs::remove_file(&tmp_path);
-        format!(
-            "failed to replace {} with {}: {e}",
-            path.display(),
-            tmp_path.display()
-        )
-    })?;
-    Ok(())
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("index");
+
+    let mut rng = [0u8; 16];
+    for _ in 0..128 {
+        random_fill_os(&mut rng).map_err(|err| format!("failed to generate temporary path: {err}"))?;
+
+        let suffix = rng
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let tmp_path = parent.join(format!(".{file_name}.tmp.{suffix}"));
+
+        let mut tmp = OpenOptions::new();
+        tmp.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            tmp.mode(0o600);
+            tmp.custom_flags(libc::O_NOFOLLOW);
+        }
+
+        match tmp.open(&tmp_path) {
+            Ok(mut file) => {
+                if let Err(err) = file.write_all(bytes) {
+                    let _ = fs::remove_file(&tmp_path);
+                    return Err(format!("failed to write temporary file {}: {err}", tmp_path.display()));
+                }
+
+                fs::rename(&tmp_path, path).map_err(|err| {
+                    let _ = fs::remove_file(&tmp_path);
+                    format!(
+                        "failed to replace {} with {}: {err}",
+                        path.display(),
+                        tmp_path.display()
+                    )
+                })?;
+                return Ok(());
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                continue;
+            }
+            Err(err) => {
+                return Err(format!("failed to create temp path {}: {err}", tmp_path.display()));
+            }
+        }
+    }
+
+    Err(format!(
+        "failed to allocate temporary write path for {} after retries",
+        path.display()
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn test_temp_dir(prefix: &str) -> PathBuf {
+        let mut path = env::temp_dir();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        path.push(format!("{}-{}-{}", prefix, std::process::id(), nonce));
+        fs::create_dir_all(&path).expect("temp dir should be created");
+        path
+    }
+
+    #[test]
+    fn write_file_atomic_writes_and_cleans_up_temporary_file() {
+        let dir = test_temp_dir("provenact-install-atomic");
+        let path = dir.join("index.json");
+
+        write_file_atomic(&path, b"old").expect("initial atomic write should succeed");
+        assert_eq!(fs::read(&path).expect("index read should succeed"), b"old");
+
+        for entry in fs::read_dir(&dir).expect("index dir should be readable") {
+            let name = entry
+                .expect("index temp entry should read")
+                .file_name()
+                .to_string_lossy()
+                .to_string();
+            assert!(!name.starts_with(".index.json.tmp."));
+        }
+
+        write_file_atomic(&path, b"new").expect("replacement atomic write should succeed");
+        assert_eq!(fs::read(&path).expect("index read should succeed"), b"new");
+
+        for entry in fs::read_dir(&dir).expect("index dir should be readable") {
+            let name = entry
+                .expect("index temp entry should read")
+                .file_name()
+                .to_string_lossy()
+                .to_string();
+            assert!(!name.starts_with(".index.json.tmp."));
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
