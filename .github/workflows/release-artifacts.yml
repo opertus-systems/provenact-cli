@@ -40,7 +40,7 @@ jobs:
           sha256sum dist/*.tar.gz > dist/SHA256SUMS
 
       - name: Install Syft
-        uses: anchore/sbom-action/download-syft@28d71544de8eaf1b958d335707167c5f783590ad
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610
 
       - name: Generate SBOMs
         run: |
