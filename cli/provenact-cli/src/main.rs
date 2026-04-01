@@ -19,14 +19,18 @@ use agentskills::{export_agentskills, Agent, ExportRequest, Scope};
 use archive::create_skill_archive;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use ed25519_dalek::Signer as _;
+use jsonschema::{Draft, JSONSchema};
 use provenact_verifier::{
-    compute_bundle_hash, compute_manifest_hash, compute_policy_hash, compute_receipt_hash,
-    compute_receipt_v1_draft_hash, compute_result_digest_v1, compute_runtime_version_digest_v1,
-    enforce_capability_ceiling, parse_manifest_json, parse_manifest_v1_draft_json,
-    parse_policy_document, parse_receipt_json, parse_receipt_v1_draft_json, sha256_prefixed,
-    verify_receipt_hash, verify_receipt_v1_draft_hash, verify_registry_entry_artifact,
-    verify_signatures, verify_trusted_signers, ExecutionReceipt, ExecutionReceiptV1Draft,
-    ExecutionResultV1Draft, Manifest, RegistryEntry, RuntimeV1Draft, SignatureEntry, Signatures,
+    compute_bundle_hash, compute_contract_hash_v1, compute_manifest_hash, compute_policy_hash,
+    compute_receipt_hash, compute_receipt_v1_draft_hash, compute_result_digest_v1,
+    compute_runtime_version_digest_v1, compute_schema_hash_v1, enforce_capability_ceiling,
+    parse_manifest_json, parse_manifest_v1_draft_json, parse_policy_document, parse_receipt_json,
+    parse_receipt_v1_draft_json, sha256_prefixed, verify_receipt_hash,
+    verify_receipt_v1_draft_hash, verify_registry_entry_artifact, verify_signatures,
+    verify_trusted_signers, EffectUseV1Draft, ExecutionReceipt, ExecutionReceiptV1Draft,
+    ExecutionResultV1Draft, JsonSchemaRefV1Draft, Manifest, RegistryEntry, RuntimeV1Draft,
+    SignatureEntry, Signatures, MANIFEST_V1_1_DRAFT_SCHEMA_VERSION,
+    MANIFEST_V1_DRAFT_SCHEMA_VERSION,
 };
 use serde_json::{json, Value};
 
@@ -42,7 +46,8 @@ use preflight::{load_verified_bundle, read_manifest_and_signatures};
 use runtime_exec::execute_wasm;
 
 const USAGE: &str = "usage:\n  provenact-cli verify --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli inspect --bundle <bundle-dir> [--allow-experimental]\n  provenact-cli pack --bundle <bundle-dir> --wasm <skill.wasm> --manifest <manifest.json> [--allow-experimental]\n  provenact-cli archive --bundle <bundle-dir> --output <skill.tar.zst>\n  provenact-cli sign --bundle <bundle-dir> --signer <signer-id> --secret-key <ed25519-secret-key-file> [--allow-experimental]\n  provenact-cli install --artifact <path|file://...|http(s)://...|oci://...> [--keys <public-keys.json> --keys-digest <sha256:...>] [--policy <policy.{json|yaml}>] [--require-signatures] [--allow-insecure-http] [--allow-experimental]\n  provenact-cli export agentskills --agent <claude|codex|cursor> --scope <user|repo|admin>\n  provenact-cli run --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> --policy <policy.{json|yaml}> --input <input-file> --receipt <receipt.json> [--receipt-format <v0|v1-draft>] [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli verify-receipt --receipt <receipt.json>\n  provenact-cli verify-registry-entry --artifact <artifact-bytes-file> --sha256 <sha256:...> --md5 <32-lowercase-hex>\n  provenact-cli experimental-validate-manifest-v1 --manifest <manifest.json>\n  provenact-cli experimental-validate-receipt-v1 --receipt <receipt.json>";
-const EXPERIMENTAL_SCHEMA_VERSION: &str = "1.0.0-draft";
+const EXPERIMENTAL_SCHEMA_VERSION: &str = MANIFEST_V1_DRAFT_SCHEMA_VERSION;
+const EXPERIMENTAL_SCHEMA_VERSION_V1_1: &str = MANIFEST_V1_1_DRAFT_SCHEMA_VERSION;
 const BUNDLE_META_SCHEMA_VERSION: &str = "1.0.0";
 const RECEIPT_TIMESTAMP_STRATEGY_LOCAL: &str = "local_untrusted_unix_seconds";
 
@@ -661,190 +666,407 @@ fn run_bundle(args: RunBundleArgs) -> Result<(), String> {
         allow_experimental,
     } = args;
     let started = Instant::now();
-    let result = (|| {
-        if matches!(receipt_format, ReceiptFormat::V1Draft) && !allow_experimental {
-            return Err("receipt format 'v1-draft' requires --allow-experimental".to_string());
-        }
+    let result =
+        (|| {
+            if matches!(receipt_format, ReceiptFormat::V1Draft) && !allow_experimental {
+                return Err("receipt format 'v1-draft' requires --allow-experimental".to_string());
+            }
 
-        let run_started_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| format!("system clock error: {e}"))?
-            .as_secs();
+            let run_started_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| format!("system clock error: {e}"))?
+                .as_secs();
 
-        let verify_started = Instant::now();
-        let bundle = load_verified_bundle(&bundle_dir)?;
-        require_manifest_schema_allowed(&bundle.manifest, allow_experimental)?;
-        let keys_raw = read_file_limited(&keys_path, MAX_JSON_BYTES, "public-keys.json")?;
-        verify_keys_digest(&keys_raw, &keys_digest)?;
-        let policy_raw = read_file_limited(&policy_path, MAX_JSON_BYTES, "policy")?;
-        let input_bytes = read_file_limited(&input_path, MAX_INPUT_BYTES, "input")?;
+            let verify_started = Instant::now();
+            let bundle = load_verified_bundle(&bundle_dir)?;
+            require_manifest_schema_allowed(&bundle.manifest, allow_experimental)?;
+            let keys_raw = read_file_limited(&keys_path, MAX_JSON_BYTES, "public-keys.json")?;
+            verify_keys_digest(&keys_raw, &keys_digest)?;
+            let policy_raw = read_file_limited(&policy_path, MAX_JSON_BYTES, "policy")?;
+            let input_bytes = read_file_limited(&input_path, MAX_INPUT_BYTES, "input")?;
 
-        let public_keys = parse_public_keys(&keys_raw)?;
-        verify_signatures(&bundle.signatures, &public_keys).map_err(|e| e.to_string())?;
-        if require_cosign
-            || oci_ref.is_some()
-            || cosign_key.is_some()
-            || cosign_cert_identity.is_some()
-            || cosign_cert_oidc_issuer.is_some()
-        {
-            let Some(ref_value) = oci_ref.as_deref() else {
-                return Err(
-                    "--oci-ref is required when cosign verification is configured".to_string(),
-                );
-            };
-            let Some(cosign_key_path) = cosign_key.as_deref() else {
-                return Err(
-                    "--cosign-key is required when cosign verification is configured".to_string(),
-                );
-            };
-            let Some(cert_identity) = cosign_cert_identity.as_deref() else {
-                return Err(
-                    "--cosign-cert-identity is required when cosign verification is configured"
-                        .to_string(),
-                );
-            };
-            let Some(cert_oidc_issuer) = cosign_cert_oidc_issuer.as_deref() else {
-                return Err(
+            let public_keys = parse_public_keys(&keys_raw)?;
+            verify_signatures(&bundle.signatures, &public_keys).map_err(|e| e.to_string())?;
+            if require_cosign
+                || oci_ref.is_some()
+                || cosign_key.is_some()
+                || cosign_cert_identity.is_some()
+                || cosign_cert_oidc_issuer.is_some()
+            {
+                let Some(ref_value) = oci_ref.as_deref() else {
+                    return Err(
+                        "--oci-ref is required when cosign verification is configured".to_string(),
+                    );
+                };
+                let Some(cosign_key_path) = cosign_key.as_deref() else {
+                    return Err(
+                        "--cosign-key is required when cosign verification is configured"
+                            .to_string(),
+                    );
+                };
+                let Some(cert_identity) = cosign_cert_identity.as_deref() else {
+                    return Err(
+                        "--cosign-cert-identity is required when cosign verification is configured"
+                            .to_string(),
+                    );
+                };
+                let Some(cert_oidc_issuer) = cosign_cert_oidc_issuer.as_deref() else {
+                    return Err(
                     "--cosign-cert-oidc-issuer is required when cosign verification is configured"
                         .to_string(),
                 );
+                };
+                verify_cosign_oci_ref(ref_value, cosign_key_path, cert_identity, cert_oidc_issuer)?;
+            }
+
+            let policy = parse_policy_document(&policy_raw).map_err(|e| e.to_string())?;
+            verify_trusted_signers(&bundle.manifest, &bundle.signatures, &policy)
+                .map_err(|e| e.to_string())?;
+            enforce_capability_ceiling(&bundle.manifest.capabilities, &policy)
+                .map_err(|e| e.to_string())?;
+            let contract_enabled =
+                bundle.manifest.schema_version.as_deref() == Some(EXPERIMENTAL_SCHEMA_VERSION_V1_1);
+            if contract_enabled && !matches!(receipt_format, ReceiptFormat::V1Draft) {
+                return Err(
+                    "contract-enabled manifests require --receipt-format v1-draft".to_string(),
+                );
+            }
+            let contract =
+                if contract_enabled {
+                    Some(bundle.manifest.tool_contract.as_ref().ok_or_else(|| {
+                        "manifest.tool_contract missing for 1.1.0-draft".to_string()
+                    })?)
+                } else {
+                    None
+                };
+            if let Some(contract) = contract {
+                if input_bytes.len() as u64 > contract.limits.max_input_bytes {
+                    return Err(format!(
+                        "input exceeds manifest.tool_contract.limits.max_input_bytes ({} > {})",
+                        input_bytes.len(),
+                        contract.limits.max_input_bytes
+                    ));
+                }
+                let input_json: Value = serde_json::from_slice(&input_bytes)
+                    .map_err(|e| format!("input must be valid JSON for 1.1.0-draft: {e}"))?;
+                let inputs_schema =
+                    bundle.manifest.inputs_schema.as_ref().ok_or_else(|| {
+                        "manifest.inputs_schema missing for 1.1.0-draft".to_string()
+                    })?;
+                validate_value_against_inline_schema(inputs_schema, &input_json, "input")?;
+            }
+            let verify_ms = verify_started.elapsed().as_millis() as u64;
+
+            let inputs_hash = sha256_prefixed(&input_bytes);
+            let execute_started = Instant::now();
+            let max_memory_bytes = contract.map(|value| {
+                value
+                    .limits
+                    .max_memory_bytes
+                    .min(usize::MAX as u64)
+                    .min(constants::WASM_MEMORY_LIMIT_BYTES as u64) as usize
+            });
+            let execution = match execute_wasm(
+                &bundle.wasm,
+                &bundle.manifest.entrypoint,
+                &input_bytes,
+                &bundle.manifest.capabilities,
+                max_memory_bytes,
+                contract,
+            ) {
+                Ok(execution) => execution,
+                Err(err) => {
+                    if contract_enabled {
+                        let finished_at = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_err(|e| format!("system clock error: {e}"))?
+                            .as_secs();
+                        let _ = maybe_write_contract_failure_receipt(
+                            &receipt_path,
+                            &bundle,
+                            &policy,
+                            run_started_at,
+                            finished_at,
+                            &inputs_hash,
+                            &sha256_prefixed(&err.outputs),
+                            &err.caps_used,
+                            err.effects_used.unwrap_or_default(),
+                            "execution_error",
+                            Some(err.message.clone()),
+                        );
+                    }
+                    return Err(err.message);
+                }
             };
-            verify_cosign_oci_ref(ref_value, cosign_key_path, cert_identity, cert_oidc_issuer)?;
-        }
-
-        let policy = parse_policy_document(&policy_raw).map_err(|e| e.to_string())?;
-        verify_trusted_signers(&bundle.manifest, &bundle.signatures, &policy)
-            .map_err(|e| e.to_string())?;
-        enforce_capability_ceiling(&bundle.manifest.capabilities, &policy)
-            .map_err(|e| e.to_string())?;
-        let verify_ms = verify_started.elapsed().as_millis() as u64;
-
-        let execute_started = Instant::now();
-        let inputs_hash = sha256_prefixed(&input_bytes);
-        let execution = execute_wasm(
-            &bundle.wasm,
-            &bundle.manifest.entrypoint,
-            &input_bytes,
-            &bundle.manifest.capabilities,
-        )?;
-        let outputs = execution.outputs;
-        let outputs_hash = sha256_prefixed(&outputs);
-        let execute_ms = execute_started.elapsed().as_millis() as u64;
-
-        let receipt_started = Instant::now();
-        let caps_used = execution.caps_used;
-        let finished_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| format!("system clock error: {e}"))?
-            .as_secs();
-        let receipt_json = match receipt_format {
-            ReceiptFormat::V0 => {
-                let receipt_hash = compute_receipt_hash(
-                    &bundle.manifest.artifact,
-                    &inputs_hash,
-                    &outputs_hash,
-                    &caps_used,
-                    finished_at,
-                )
-                .map_err(|e| format!("receipt hash computation failed: {e}"))?;
-                let receipt = ExecutionReceipt {
-                    artifact: bundle.manifest.artifact.clone(),
-                    inputs_hash: inputs_hash.clone(),
-                    outputs_hash: outputs_hash.clone(),
-                    caps_used: caps_used.clone(),
-                    timestamp: finished_at,
-                    receipt_hash,
+            let outputs = execution.outputs;
+            let caps_used = execution.caps_used;
+            let effects_used = execution.effects_used.unwrap_or_default();
+            let outputs_hash = sha256_prefixed(&outputs);
+            let execute_ms = execute_started.elapsed().as_millis() as u64;
+            if let Some(contract) = contract {
+                if execute_ms > contract.limits.max_duration_ms {
+                    let finished_at = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|e| format!("system clock error: {e}"))?
+                        .as_secs();
+                    maybe_write_contract_failure_receipt(
+                        &receipt_path,
+                        &bundle,
+                        &policy,
+                        run_started_at,
+                        finished_at,
+                        &inputs_hash,
+                        &outputs_hash,
+                        &caps_used,
+                        effects_used.clone(),
+                        "duration_limit_exceeded",
+                        Some(format!(
+                            "execution exceeded max_duration_ms ({} > {})",
+                            execute_ms, contract.limits.max_duration_ms
+                        )),
+                    )?;
+                    return Err(format!(
+                        "execution exceeded max_duration_ms ({} > {})",
+                        execute_ms, contract.limits.max_duration_ms
+                    ));
+                }
+                if outputs.len() as u64 > contract.limits.max_output_bytes {
+                    let finished_at = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|e| format!("system clock error: {e}"))?
+                        .as_secs();
+                    maybe_write_contract_failure_receipt(
+                        &receipt_path,
+                        &bundle,
+                        &policy,
+                        run_started_at,
+                        finished_at,
+                        &inputs_hash,
+                        &outputs_hash,
+                        &caps_used,
+                        effects_used.clone(),
+                        "output_limit_exceeded",
+                        Some(format!(
+                        "output exceeds manifest.tool_contract.limits.max_output_bytes ({} > {})",
+                        outputs.len(),
+                        contract.limits.max_output_bytes
+                    )),
+                    )?;
+                    return Err(format!(
+                        "output exceeds manifest.tool_contract.limits.max_output_bytes ({} > {})",
+                        outputs.len(),
+                        contract.limits.max_output_bytes
+                    ));
+                }
+                let output_json: Value = match serde_json::from_slice(&outputs) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        let finished_at = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_err(|e| format!("system clock error: {e}"))?
+                            .as_secs();
+                        maybe_write_contract_failure_receipt(
+                            &receipt_path,
+                            &bundle,
+                            &policy,
+                            run_started_at,
+                            finished_at,
+                            &inputs_hash,
+                            &outputs_hash,
+                            &caps_used,
+                            effects_used.clone(),
+                            "output_not_json",
+                            Some(format!("output must be valid JSON for 1.1.0-draft: {err}")),
+                        )?;
+                        return Err(format!("output must be valid JSON for 1.1.0-draft: {err}"));
+                    }
                 };
-                verify_receipt_hash(&receipt)
-                    .map_err(|e| format!("receipt self-verification failed: {e}"))?;
-                serde_json::to_vec_pretty(&receipt)
-                    .map_err(|e| format!("receipt JSON encode failed: {e}"))?
+                let outputs_schema =
+                    bundle.manifest.outputs_schema.as_ref().ok_or_else(|| {
+                        "manifest.outputs_schema missing for 1.1.0-draft".to_string()
+                    })?;
+                if let Err(err) =
+                    validate_value_against_inline_schema(outputs_schema, &output_json, "output")
+                {
+                    let finished_at = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|e| format!("system clock error: {e}"))?
+                        .as_secs();
+                    maybe_write_contract_failure_receipt(
+                        &receipt_path,
+                        &bundle,
+                        &policy,
+                        run_started_at,
+                        finished_at,
+                        &inputs_hash,
+                        &outputs_hash,
+                        &caps_used,
+                        effects_used.clone(),
+                        "output_schema_mismatch",
+                        Some(err.clone()),
+                    )?;
+                    return Err(err);
+                }
             }
-            ReceiptFormat::V1Draft => {
-                let mut caps_requested = bundle
-                    .manifest
-                    .capabilities
-                    .iter()
-                    .map(|c| format!("{}:{}", c.kind, c.value))
-                    .collect::<Vec<_>>();
-                caps_requested.sort();
-                let caps_granted = caps_requested.clone();
-                let manifest_hash = bundle.signatures.manifest_hash.clone();
-                let policy_hash = compute_policy_hash(&policy)
-                    .map_err(|e| format!("policy hash computation failed: {e}"))?;
-                let bundle_hash = compute_bundle_hash(
-                    &bundle.manifest.artifact,
-                    &manifest_hash,
-                    &bundle.signatures,
-                )
-                .map_err(|e| format!("bundle hash computation failed: {e}"))?;
-                let result = ExecutionResultV1Draft {
-                    status: "success".to_string(),
-                    code: "ok".to_string(),
-                    message: None,
-                };
-                let runtime = RuntimeV1Draft {
-                    name: "provenact-cli".to_string(),
-                    version: env!("CARGO_PKG_VERSION").to_string(),
-                    profile: Some("wasmtime36-hostabi-v0".to_string()),
-                };
-                let runtime_version_digest = compute_runtime_version_digest_v1(&runtime)
-                    .map_err(|e| format!("runtime version digest failed: {e}"))?;
-                let result_digest = compute_result_digest_v1(&result, &outputs_hash, &caps_used)
-                    .map_err(|e| format!("result digest computation failed: {e}"))?;
 
-                let mut receipt = ExecutionReceiptV1Draft {
-                    schema_version: EXPERIMENTAL_SCHEMA_VERSION.to_string(),
-                    artifact: bundle.manifest.artifact.clone(),
-                    manifest_hash,
-                    policy_hash,
-                    bundle_hash,
-                    inputs_hash: inputs_hash.clone(),
-                    outputs_hash: outputs_hash.clone(),
-                    runtime_version_digest,
-                    result_digest,
-                    caps_requested,
-                    caps_granted,
-                    caps_used: caps_used.clone(),
-                    result,
-                    runtime,
-                    started_at: run_started_at,
-                    finished_at,
-                    timestamp_strategy: RECEIPT_TIMESTAMP_STRATEGY_LOCAL.to_string(),
-                    attestations: None,
-                    receipt_hash: String::new(),
-                };
-                let receipt_hash = compute_receipt_v1_draft_hash(&receipt)
+            let receipt_started = Instant::now();
+            let finished_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| format!("system clock error: {e}"))?
+                .as_secs();
+            let receipt_json = match receipt_format {
+                ReceiptFormat::V0 => {
+                    let receipt_hash = compute_receipt_hash(
+                        &bundle.manifest.artifact,
+                        &inputs_hash,
+                        &outputs_hash,
+                        &caps_used,
+                        finished_at,
+                    )
                     .map_err(|e| format!("receipt hash computation failed: {e}"))?;
-                receipt.receipt_hash = receipt_hash;
-                verify_receipt_v1_draft_hash(&receipt)
-                    .map_err(|e| format!("receipt self-verification failed: {e}"))?;
-                serde_json::to_vec_pretty(&receipt)
-                    .map_err(|e| format!("receipt JSON encode failed: {e}"))?
-            }
-        };
+                    let receipt = ExecutionReceipt {
+                        artifact: bundle.manifest.artifact.clone(),
+                        inputs_hash: inputs_hash.clone(),
+                        outputs_hash: outputs_hash.clone(),
+                        caps_used: caps_used.clone(),
+                        timestamp: finished_at,
+                        receipt_hash,
+                    };
+                    verify_receipt_hash(&receipt)
+                        .map_err(|e| format!("receipt self-verification failed: {e}"))?;
+                    serde_json::to_vec_pretty(&receipt)
+                        .map_err(|e| format!("receipt JSON encode failed: {e}"))?
+                }
+                ReceiptFormat::V1Draft => {
+                    let mut caps_requested = bundle
+                        .manifest
+                        .capabilities
+                        .iter()
+                        .map(|c| format!("{}:{}", c.kind, c.value))
+                        .collect::<Vec<_>>();
+                    caps_requested.sort();
+                    let caps_granted = caps_requested.clone();
+                    let manifest_hash = bundle.signatures.manifest_hash.clone();
+                    let policy_hash = compute_policy_hash(&policy)
+                        .map_err(|e| format!("policy hash computation failed: {e}"))?;
+                    let bundle_hash = compute_bundle_hash(
+                        &bundle.manifest.artifact,
+                        &manifest_hash,
+                        &bundle.signatures,
+                    )
+                    .map_err(|e| format!("bundle hash computation failed: {e}"))?;
+                    let result = ExecutionResultV1Draft {
+                        status: "success".to_string(),
+                        code: "ok".to_string(),
+                        message: None,
+                    };
+                    let runtime = RuntimeV1Draft {
+                        name: "provenact-cli".to_string(),
+                        version: env!("CARGO_PKG_VERSION").to_string(),
+                        profile: Some("wasmtime36-hostabi-v0".to_string()),
+                    };
+                    let runtime_version_digest = compute_runtime_version_digest_v1(&runtime)
+                        .map_err(|e| format!("runtime version digest failed: {e}"))?;
+                    let result_digest =
+                        compute_result_digest_v1(&result, &outputs_hash, &caps_used)
+                            .map_err(|e| format!("result digest computation failed: {e}"))?;
+                    let (
+                        contract_hash,
+                        instructions_hash,
+                        input_schema_hash,
+                        output_schema_hash,
+                        effects_used,
+                    ) =
+                        if contract_enabled {
+                            let contract = contract.ok_or_else(|| {
+                                "manifest.tool_contract missing for 1.1.0-draft".to_string()
+                            })?;
+                            let inputs_schema =
+                                bundle.manifest.inputs_schema.as_ref().ok_or_else(|| {
+                                    "manifest.inputs_schema missing for 1.1.0-draft".to_string()
+                                })?;
+                            let outputs_schema =
+                                bundle.manifest.outputs_schema.as_ref().ok_or_else(|| {
+                                    "manifest.outputs_schema missing for 1.1.0-draft".to_string()
+                                })?;
+                            (
+                                Some(compute_contract_hash_v1(contract).map_err(|e| {
+                                    format!("contract hash computation failed: {e}")
+                                })?),
+                                Some(contract.instructions.hash.clone()),
+                                Some(compute_schema_hash_v1(inputs_schema).map_err(|e| {
+                                    format!("input schema hash computation failed: {e}")
+                                })?),
+                                Some(compute_schema_hash_v1(outputs_schema).map_err(|e| {
+                                    format!("output schema hash computation failed: {e}")
+                                })?),
+                                Some(effects_used.clone()),
+                            )
+                        } else {
+                            (None, None, None, None, None)
+                        };
 
-        if let Some(parent) = receipt_path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
-            }
-        }
-        write_file(&receipt_path, &receipt_json)?;
-        let receipt_ms = receipt_started.elapsed().as_millis() as u64;
+                    let mut receipt = ExecutionReceiptV1Draft {
+                        schema_version: if contract_enabled {
+                            EXPERIMENTAL_SCHEMA_VERSION_V1_1.to_string()
+                        } else {
+                            EXPERIMENTAL_SCHEMA_VERSION.to_string()
+                        },
+                        artifact: bundle.manifest.artifact.clone(),
+                        manifest_hash,
+                        policy_hash,
+                        bundle_hash,
+                        inputs_hash: inputs_hash.clone(),
+                        outputs_hash: outputs_hash.clone(),
+                        runtime_version_digest,
+                        result_digest,
+                        caps_requested,
+                        caps_granted,
+                        caps_used: caps_used.clone(),
+                        contract_hash,
+                        instructions_hash,
+                        input_schema_hash,
+                        output_schema_hash,
+                        effects_used,
+                        result,
+                        runtime,
+                        started_at: run_started_at,
+                        finished_at,
+                        timestamp_strategy: RECEIPT_TIMESTAMP_STRATEGY_LOCAL.to_string(),
+                        attestations: None,
+                        receipt_hash: String::new(),
+                    };
+                    let receipt_hash = compute_receipt_v1_draft_hash(&receipt)
+                        .map_err(|e| format!("receipt hash computation failed: {e}"))?;
+                    receipt.receipt_hash = receipt_hash;
+                    verify_receipt_v1_draft_hash(&receipt)
+                        .map_err(|e| format!("receipt self-verification failed: {e}"))?;
+                    serde_json::to_vec_pretty(&receipt)
+                        .map_err(|e| format!("receipt JSON encode failed: {e}"))?
+                }
+            };
 
-        println!(
-            "OK run artifact={} receipt={}",
-            bundle.manifest.artifact,
-            receipt_path.display()
-        );
-        Ok((
-            bundle.manifest.artifact,
-            bundle.manifest.capabilities.len() as u64,
-            verify_ms,
-            execute_ms,
-            receipt_ms,
-        ))
-    })();
+            if let Some(parent) = receipt_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+                }
+            }
+            write_file(&receipt_path, &receipt_json)?;
+            let receipt_ms = receipt_started.elapsed().as_millis() as u64;
+
+            println!(
+                "OK run artifact={} receipt={}",
+                bundle.manifest.artifact,
+                receipt_path.display()
+            );
+            Ok((
+                bundle.manifest.artifact,
+                bundle.manifest.capabilities.len() as u64,
+                verify_ms,
+                execute_ms,
+                receipt_ms,
+            ))
+        })();
 
     match result {
         Ok((artifact, capability_count, verify_ms, execute_ms, receipt_ms)) => {
@@ -874,6 +1096,143 @@ fn run_bundle(args: RunBundleArgs) -> Result<(), String> {
             Err(err)
         }
     }
+}
+
+fn validate_value_against_inline_schema(
+    schema_ref: &JsonSchemaRefV1Draft,
+    value: &Value,
+    label: &str,
+) -> Result<(), String> {
+    let JsonSchemaRefV1Draft::Inline(schema) = schema_ref else {
+        return Err(format!(
+            "{label} schema must be inline for schema_version 1.1.0-draft"
+        ));
+    };
+    let compiled = JSONSchema::options()
+        .with_draft(Draft::Draft7)
+        .compile(schema)
+        .map_err(|e| format!("{label} schema compile failed: {e}"))?;
+    if let Err(errors) = compiled.validate(value) {
+        let detail = errors
+            .map(|error| error.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(format!("{label} schema validation failed: {detail}"));
+    }
+    Ok(())
+}
+
+fn maybe_write_contract_failure_receipt(
+    receipt_path: &Path,
+    bundle: &preflight::VerifiedBundle,
+    policy: &provenact_verifier::Policy,
+    started_at: u64,
+    finished_at: u64,
+    inputs_hash: &str,
+    outputs_hash: &str,
+    caps_used: &[String],
+    effects_used: Vec<EffectUseV1Draft>,
+    code: &str,
+    message: Option<String>,
+) -> Result<(), String> {
+    let contract = bundle
+        .manifest
+        .tool_contract
+        .as_ref()
+        .ok_or_else(|| "manifest.tool_contract missing for failure receipt".to_string())?;
+    let manifest_hash = bundle.signatures.manifest_hash.clone();
+    let policy_hash =
+        compute_policy_hash(policy).map_err(|e| format!("policy hash computation failed: {e}"))?;
+    let bundle_hash = compute_bundle_hash(
+        &bundle.manifest.artifact,
+        &manifest_hash,
+        &bundle.signatures,
+    )
+    .map_err(|e| format!("bundle hash computation failed: {e}"))?;
+    let mut caps_requested = bundle
+        .manifest
+        .capabilities
+        .iter()
+        .map(|capability| format!("{}:{}", capability.kind, capability.value))
+        .collect::<Vec<_>>();
+    caps_requested.sort();
+    let caps_granted = caps_requested.clone();
+
+    let runtime = RuntimeV1Draft {
+        name: "provenact-cli".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        profile: Some("wasmtime36-hostabi-v0".to_string()),
+    };
+    let runtime_version_digest = compute_runtime_version_digest_v1(&runtime)
+        .map_err(|e| format!("runtime version digest failed: {e}"))?;
+    let result = ExecutionResultV1Draft {
+        status: "failure".to_string(),
+        code: code.to_string(),
+        message,
+    };
+    let result_digest = compute_result_digest_v1(&result, outputs_hash, caps_used)
+        .map_err(|e| format!("result digest computation failed: {e}"))?;
+    let inputs_schema = bundle
+        .manifest
+        .inputs_schema
+        .as_ref()
+        .ok_or_else(|| "manifest.inputs_schema missing for failure receipt".to_string())?;
+    let outputs_schema = bundle
+        .manifest
+        .outputs_schema
+        .as_ref()
+        .ok_or_else(|| "manifest.outputs_schema missing for failure receipt".to_string())?;
+
+    let mut receipt = ExecutionReceiptV1Draft {
+        schema_version: EXPERIMENTAL_SCHEMA_VERSION_V1_1.to_string(),
+        artifact: bundle.manifest.artifact.clone(),
+        manifest_hash,
+        policy_hash,
+        bundle_hash,
+        inputs_hash: inputs_hash.to_string(),
+        outputs_hash: outputs_hash.to_string(),
+        runtime_version_digest,
+        result_digest,
+        caps_requested,
+        caps_granted,
+        caps_used: caps_used.to_vec(),
+        contract_hash: Some(
+            compute_contract_hash_v1(contract)
+                .map_err(|e| format!("contract hash computation failed: {e}"))?,
+        ),
+        instructions_hash: Some(contract.instructions.hash.clone()),
+        input_schema_hash: Some(
+            compute_schema_hash_v1(inputs_schema)
+                .map_err(|e| format!("input schema hash computation failed: {e}"))?,
+        ),
+        output_schema_hash: Some(
+            compute_schema_hash_v1(outputs_schema)
+                .map_err(|e| format!("output schema hash computation failed: {e}"))?,
+        ),
+        effects_used: Some(effects_used),
+        result,
+        runtime,
+        started_at,
+        finished_at,
+        timestamp_strategy: RECEIPT_TIMESTAMP_STRATEGY_LOCAL.to_string(),
+        attestations: None,
+        receipt_hash: String::new(),
+    };
+    let receipt_hash = compute_receipt_v1_draft_hash(&receipt)
+        .map_err(|e| format!("receipt hash computation failed: {e}"))?;
+    receipt.receipt_hash = receipt_hash;
+    verify_receipt_v1_draft_hash(&receipt)
+        .map_err(|e| format!("failure receipt self-verification failed: {e}"))?;
+    let receipt_json = serde_json::to_vec_pretty(&receipt)
+        .map_err(|e| format!("receipt JSON encode failed: {e}"))?;
+
+    if let Some(parent) = receipt_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+    }
+    write_file(receipt_path, &receipt_json)?;
+    Ok(())
 }
 
 fn verify_receipt_file(receipt_path: &Path) -> Result<(), String> {
@@ -1058,13 +1417,15 @@ fn require_manifest_schema_allowed(
     manifest: &Manifest,
     allow_experimental: bool,
 ) -> Result<(), String> {
-    if manifest.schema_version.as_deref() == Some(EXPERIMENTAL_SCHEMA_VERSION)
-        && !allow_experimental
-    {
-        return Err(format!(
-            "manifest schema_version '{}' requires --allow-experimental",
-            EXPERIMENTAL_SCHEMA_VERSION
-        ));
+    if let Some(schema_version) = manifest.schema_version.as_deref() {
+        let is_experimental = schema_version == EXPERIMENTAL_SCHEMA_VERSION
+            || schema_version == EXPERIMENTAL_SCHEMA_VERSION_V1_1;
+        if is_experimental && !allow_experimental {
+            return Err(format!(
+                "manifest schema_version '{}' requires --allow-experimental",
+                schema_version
+            ));
+        }
     }
     Ok(())
 }

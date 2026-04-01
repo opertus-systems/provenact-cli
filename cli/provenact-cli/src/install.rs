@@ -22,6 +22,7 @@ use crate::fileio::{read_file_limited, write_file};
 use crate::keys::{parse_public_keys, verify_keys_digest};
 
 const EXPERIMENTAL_SCHEMA_VERSION: &str = "1.0.0-draft";
+const EXPERIMENTAL_SCHEMA_VERSION_V1_1: &str = "1.1.0-draft";
 const MAX_ARCHIVE_UNPACKED_BYTES: u64 = MAX_SKILL_ARCHIVE_BYTES * 4;
 const HTTP_CONNECT_TIMEOUT_SECS: u64 = 5;
 const HTTP_TOTAL_TIMEOUT_SECS: u64 = 30;
@@ -268,12 +269,15 @@ fn require_manifest_schema_allowed(
     manifest: &provenact_verifier::Manifest,
     allow_experimental: bool,
 ) -> Result<(), String> {
-    if manifest.schema_version.as_deref() == Some(EXPERIMENTAL_SCHEMA_VERSION)
-        && !allow_experimental
-    {
-        return Err(format!(
-            "manifest schema_version '{EXPERIMENTAL_SCHEMA_VERSION}' requires --allow-experimental"
-        ));
+    if let Some(schema_version) = manifest.schema_version.as_deref() {
+        let is_experimental = schema_version == EXPERIMENTAL_SCHEMA_VERSION
+            || schema_version == EXPERIMENTAL_SCHEMA_VERSION_V1_1;
+        if is_experimental && !allow_experimental {
+            return Err(format!(
+                "manifest schema_version '{}' requires --allow-experimental",
+                schema_version
+            ));
+        }
     }
     Ok(())
 }

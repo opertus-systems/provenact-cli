@@ -41,6 +41,12 @@ pub const RECEIPT_V1_DRAFT_SCHEMA_JSON: &str = include_str!(concat!(
     "/../../spec/execution-receipt.v1.experimental.schema.json"
 ));
 
+pub const MANIFEST_V1_DRAFT_SCHEMA_VERSION: &str = "1.0.0-draft";
+pub const MANIFEST_V1_1_DRAFT_SCHEMA_VERSION: &str = "1.1.0-draft";
+pub const TOOL_CONTRACT_V1_1_DRAFT_SCHEMA_VERSION: &str = "1.1.0-draft";
+pub const RECEIPT_V1_DRAFT_SCHEMA_VERSION: &str = "1.0.0-draft";
+pub const RECEIPT_V1_1_DRAFT_SCHEMA_VERSION: &str = "1.1.0-draft";
+
 #[derive(Debug, Error)]
 pub enum VerifyError {
     #[error("invalid digest format: {0}")]
@@ -125,6 +131,18 @@ pub struct Manifest {
     pub artifact: String,
     pub capabilities: Vec<Capability>,
     pub signers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inputs_schema: Option<JsonSchemaRefV1Draft>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outputs_schema: Option<JsonSchemaRefV1Draft>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compatibility: Option<CompatibilityV1Draft>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_contract: Option<ToolContractV1Draft>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,6 +163,8 @@ pub struct ManifestV1Draft {
     pub provenance: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compatibility: Option<CompatibilityV1Draft>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_contract: Option<ToolContractV1Draft>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,6 +195,72 @@ pub struct CompatibilityV1Draft {
     pub runtime_profiles: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adapter_profiles: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolContractV1Draft {
+    pub schema_version: String,
+    pub instructions: ToolInstructionsV1Draft,
+    pub effects: Vec<EffectDeclV1Draft>,
+    pub determinism: DeterminismV1Draft,
+    pub limits: ToolContractLimitsV1Draft,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolInstructionsV1Draft {
+    pub format: String,
+    pub text: String,
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EffectDeclV1Draft {
+    pub kind: String,
+    pub selector: EffectSelectorV1Draft,
+    pub limits: EffectLimitsV1Draft,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EffectSelectorV1Draft {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_prefix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url_prefix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub methods: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EffectLimitsV1Draft {
+    pub max_calls: u64,
+    pub max_bytes_in: u64,
+    pub max_bytes_out: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeterminismV1Draft {
+    pub mode: String,
+    pub required_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolContractLimitsV1Draft {
+    pub max_duration_ms: u64,
+    pub max_memory_bytes: u64,
+    pub max_input_bytes: u64,
+    pub max_output_bytes: u64,
+    pub max_effect_events: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,6 +329,16 @@ pub struct ExecutionReceiptV1Draft {
     pub caps_requested: Vec<String>,
     pub caps_granted: Vec<String>,
     pub caps_used: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_schema_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects_used: Option<Vec<EffectUseV1Draft>>,
     pub result: ExecutionResultV1Draft,
     pub runtime: RuntimeV1Draft,
     pub started_at: u64,
@@ -276,6 +372,17 @@ pub struct RuntimeV1Draft {
 pub struct AttestationV1Draft {
     pub r#type: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EffectUseV1Draft {
+    pub kind: String,
+    pub selector: String,
+    pub calls: u64,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+    pub denied_calls: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -356,6 +463,16 @@ struct ReceiptV1DraftHashPayload<'a> {
     caps_requested: &'a [String],
     caps_granted: &'a [String],
     caps_used: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    contract_hash: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instructions_hash: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_schema_hash: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_schema_hash: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effects_used: Option<&'a [EffectUseV1Draft]>,
     result: &'a ExecutionResultV1Draft,
     runtime: &'a RuntimeV1Draft,
     started_at: u64,
@@ -385,20 +502,65 @@ pub fn md5_hex(bytes: &[u8]) -> String {
 pub fn parse_manifest_json(bytes: &[u8]) -> Result<Manifest, VerifyError> {
     let manifest: Manifest = from_slice(bytes).map_err(|_| VerifyError::ManifestJson)?;
     if let Some(version) = manifest.schema_version.as_deref() {
-        if version != "1.0.0-draft" {
+        if version != MANIFEST_V1_DRAFT_SCHEMA_VERSION
+            && version != MANIFEST_V1_1_DRAFT_SCHEMA_VERSION
+        {
             return Err(VerifyError::UnsupportedManifestSchemaVersion(
                 version.to_string(),
             ));
         }
     }
     validate_sha256_prefixed(&manifest.artifact)?;
+    if manifest
+        .capabilities
+        .iter()
+        .any(|cap| cap.kind.is_empty() || cap.value.is_empty())
+    {
+        return Err(VerifyError::ManifestJson);
+    }
+    if manifest.signers.iter().any(String::is_empty) {
+        return Err(VerifyError::ManifestJson);
+    }
+    match manifest.schema_version.as_deref() {
+        Some(MANIFEST_V1_1_DRAFT_SCHEMA_VERSION) => {
+            validate_manifest_v1_base_requirements(
+                manifest.id.as_ref(),
+                manifest.inputs_schema.as_ref(),
+                manifest.outputs_schema.as_ref(),
+                true,
+            )?;
+            validate_manifest_contract_requirements(
+                manifest.id.as_ref(),
+                manifest.inputs_schema.as_ref(),
+                manifest.outputs_schema.as_ref(),
+                manifest.tool_contract.as_ref(),
+                &manifest.capabilities,
+            )?;
+        }
+        Some(MANIFEST_V1_DRAFT_SCHEMA_VERSION) => {
+            validate_manifest_v1_base_requirements(
+                manifest.id.as_ref(),
+                manifest.inputs_schema.as_ref(),
+                manifest.outputs_schema.as_ref(),
+                false,
+            )?;
+            if manifest.tool_contract.is_some() {
+                return Err(VerifyError::InvalidDraftField(
+                    "manifest.tool_contract requires schema_version 1.1.0-draft".to_string(),
+                ));
+            }
+        }
+        _ => {}
+    }
     Ok(manifest)
 }
 
 pub fn parse_manifest_v1_draft_json(bytes: &[u8]) -> Result<ManifestV1Draft, VerifyError> {
     let manifest: ManifestV1Draft =
         from_slice(bytes).map_err(|_| VerifyError::ManifestV1DraftJson)?;
-    if manifest.schema_version != "1.0.0-draft" {
+    if manifest.schema_version != MANIFEST_V1_DRAFT_SCHEMA_VERSION
+        && manifest.schema_version != MANIFEST_V1_1_DRAFT_SCHEMA_VERSION
+    {
         return Err(VerifyError::UnsupportedManifestSchemaVersion(
             manifest.schema_version.clone(),
         ));
@@ -435,8 +597,13 @@ pub fn parse_manifest_v1_draft_json(bytes: &[u8]) -> Result<ManifestV1Draft, Ver
             }
         }
     }
-    validate_json_schema_ref(&manifest.inputs_schema, "manifest.inputs_schema")?;
-    validate_json_schema_ref(&manifest.outputs_schema, "manifest.outputs_schema")?;
+    if manifest.schema_version == MANIFEST_V1_1_DRAFT_SCHEMA_VERSION {
+        validate_json_schema_ref_inline_only(&manifest.inputs_schema, "manifest.inputs_schema")?;
+        validate_json_schema_ref_inline_only(&manifest.outputs_schema, "manifest.outputs_schema")?;
+    } else {
+        validate_json_schema_ref(&manifest.inputs_schema, "manifest.inputs_schema")?;
+        validate_json_schema_ref(&manifest.outputs_schema, "manifest.outputs_schema")?;
+    }
     if manifest
         .capabilities
         .iter()
@@ -471,7 +638,379 @@ pub fn parse_manifest_v1_draft_json(bytes: &[u8]) -> Result<ManifestV1Draft, Ver
             ));
         }
     }
+    match manifest.schema_version.as_str() {
+        MANIFEST_V1_1_DRAFT_SCHEMA_VERSION => {
+            let Some(tool_contract) = manifest.tool_contract.as_ref() else {
+                return Err(VerifyError::InvalidDraftField(
+                    "manifest.tool_contract is required for schema_version 1.1.0-draft".to_string(),
+                ));
+            };
+            validate_tool_contract_v1_draft(tool_contract)?;
+            verify_effect_capability_equivalence(&manifest.capabilities, &tool_contract.effects)?;
+        }
+        MANIFEST_V1_DRAFT_SCHEMA_VERSION => {
+            if manifest.tool_contract.is_some() {
+                return Err(VerifyError::InvalidDraftField(
+                    "manifest.tool_contract requires schema_version 1.1.0-draft".to_string(),
+                ));
+            }
+        }
+        _ => {}
+    }
     Ok(manifest)
+}
+
+fn validate_manifest_v1_base_requirements(
+    id: Option<&String>,
+    inputs_schema: Option<&JsonSchemaRefV1Draft>,
+    outputs_schema: Option<&JsonSchemaRefV1Draft>,
+    inline_only: bool,
+) -> Result<(), VerifyError> {
+    let Some(id) = id else {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.id is required for schema_version 1.x draft".to_string(),
+        ));
+    };
+    if id.is_empty() {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.id must be non-empty".to_string(),
+        ));
+    }
+    let Some(inputs_schema) = inputs_schema else {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.inputs_schema is required for schema_version 1.x draft".to_string(),
+        ));
+    };
+    let Some(outputs_schema) = outputs_schema else {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.outputs_schema is required for schema_version 1.x draft".to_string(),
+        ));
+    };
+    if inline_only {
+        validate_json_schema_ref_inline_only(inputs_schema, "manifest.inputs_schema")?;
+        validate_json_schema_ref_inline_only(outputs_schema, "manifest.outputs_schema")?;
+    } else {
+        validate_json_schema_ref(inputs_schema, "manifest.inputs_schema")?;
+        validate_json_schema_ref(outputs_schema, "manifest.outputs_schema")?;
+    }
+    Ok(())
+}
+
+fn validate_manifest_contract_requirements(
+    id: Option<&String>,
+    inputs_schema: Option<&JsonSchemaRefV1Draft>,
+    outputs_schema: Option<&JsonSchemaRefV1Draft>,
+    tool_contract: Option<&ToolContractV1Draft>,
+    capabilities: &[Capability],
+) -> Result<(), VerifyError> {
+    validate_manifest_v1_base_requirements(id, inputs_schema, outputs_schema, true)?;
+
+    let Some(tool_contract) = tool_contract else {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.tool_contract is required for schema_version 1.1.0-draft".to_string(),
+        ));
+    };
+    validate_tool_contract_v1_draft(tool_contract)?;
+    verify_effect_capability_equivalence(capabilities, &tool_contract.effects)
+}
+
+fn validate_tool_contract_v1_draft(tool_contract: &ToolContractV1Draft) -> Result<(), VerifyError> {
+    if tool_contract.schema_version != TOOL_CONTRACT_V1_1_DRAFT_SCHEMA_VERSION {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.tool_contract.schema_version must be 1.1.0-draft".to_string(),
+        ));
+    }
+    match tool_contract.instructions.format.as_str() {
+        "text/plain" | "text/markdown" => {}
+        _ => {
+            return Err(VerifyError::InvalidDraftField(
+                "manifest.tool_contract.instructions.format must be text/plain or text/markdown"
+                    .to_string(),
+            ));
+        }
+    }
+    if tool_contract.instructions.text.is_empty() {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.tool_contract.instructions.text must be non-empty".to_string(),
+        ));
+    }
+    validate_sha256_prefixed(&tool_contract.instructions.hash)?;
+    let expected = sha256_prefixed(tool_contract.instructions.text.as_bytes());
+    if expected != tool_contract.instructions.hash {
+        return Err(VerifyError::DigestMismatch {
+            expected,
+            actual: tool_contract.instructions.hash.clone(),
+        });
+    }
+    if tool_contract.limits.max_duration_ms == 0
+        || tool_contract.limits.max_memory_bytes == 0
+        || tool_contract.limits.max_input_bytes == 0
+        || tool_contract.limits.max_output_bytes == 0
+        || tool_contract.limits.max_effect_events == 0
+    {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.tool_contract.limits values must be greater than zero".to_string(),
+        ));
+    }
+    if has_duplicates(&tool_contract.determinism.required_capabilities) {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.tool_contract.determinism.required_capabilities must be unique".to_string(),
+        ));
+    }
+    if tool_contract
+        .determinism
+        .required_capabilities
+        .iter()
+        .any(|value| value != "time.now" && value != "random.bytes" && value != "net.http")
+    {
+        return Err(VerifyError::InvalidDraftField(
+            "manifest.tool_contract.determinism.required_capabilities contains unsupported value"
+                .to_string(),
+        ));
+    }
+    let mut seen = HashSet::<String>::new();
+    let mut effect_kinds = HashSet::<String>::new();
+    for effect in &tool_contract.effects {
+        validate_effect_decl(effect)?;
+        let key = format!("{}:{}", effect.kind, effect_selector_key(effect)?);
+        if !seen.insert(key) {
+            return Err(VerifyError::InvalidDraftField(
+                "manifest.tool_contract.effects must not contain duplicate kind/selector entries"
+                    .to_string(),
+            ));
+        }
+        effect_kinds.insert(effect.kind.clone());
+    }
+    match tool_contract.determinism.mode.as_str() {
+        "deterministic" => {
+            if !tool_contract.determinism.required_capabilities.is_empty() {
+                return Err(VerifyError::InvalidDraftField(
+                    "deterministic mode requires empty required_capabilities".to_string(),
+                ));
+            }
+            if tool_contract.effects.iter().any(|effect| {
+                effect.kind == "time.now"
+                    || effect.kind == "random.bytes"
+                    || effect.kind == "net.http"
+            }) {
+                return Err(VerifyError::InvalidDraftField(
+                    "deterministic mode forbids time.now, random.bytes, and net.http effects"
+                        .to_string(),
+                ));
+            }
+        }
+        "requires_capabilities" => {
+            if tool_contract.determinism.required_capabilities.is_empty() {
+                return Err(VerifyError::InvalidDraftField(
+                    "requires_capabilities mode requires non-empty required_capabilities"
+                        .to_string(),
+                ));
+            }
+            for capability in &tool_contract.determinism.required_capabilities {
+                if !effect_kinds.contains(capability) {
+                    return Err(VerifyError::InvalidDraftField(format!(
+                        "required capability {capability} must be declared in tool_contract.effects"
+                    )));
+                }
+            }
+        }
+        _ => {
+            return Err(VerifyError::InvalidDraftField(
+                "manifest.tool_contract.determinism.mode must be deterministic or requires_capabilities".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_effect_decl(effect: &EffectDeclV1Draft) -> Result<(), VerifyError> {
+    if effect.limits.max_calls == 0 {
+        return Err(VerifyError::InvalidDraftField(
+            "effect limits.max_calls must be greater than zero".to_string(),
+        ));
+    }
+    match effect.kind.as_str() {
+        "fs.read" | "fs.read_tree" | "fs.write" => {
+            let Some(path_prefix) = effect.selector.path_prefix.as_deref() else {
+                return Err(VerifyError::InvalidDraftField(
+                    "filesystem effects require selector.path_prefix".to_string(),
+                ));
+            };
+            if normalize_abs_path(path_prefix).is_none() {
+                return Err(VerifyError::InvalidDraftField(
+                    "selector.path_prefix must be an absolute normalized path".to_string(),
+                ));
+            }
+            if effect.selector.url_prefix.is_some()
+                || effect.selector.methods.is_some()
+                || effect.selector.key.is_some()
+                || effect.selector.topic.is_some()
+            {
+                return Err(VerifyError::InvalidDraftField(
+                    "filesystem effects only allow selector.path_prefix".to_string(),
+                ));
+            }
+        }
+        "net.http" => {
+            let Some(url_prefix) = effect.selector.url_prefix.as_deref() else {
+                return Err(VerifyError::InvalidDraftField(
+                    "net.http effect requires selector.url_prefix".to_string(),
+                ));
+            };
+            let parsed = Url::parse(url_prefix).map_err(|_| {
+                VerifyError::InvalidDraftField(
+                    "selector.url_prefix must be a valid absolute URL".to_string(),
+                )
+            })?;
+            if !parsed.has_authority() || parsed.query().is_some() || parsed.fragment().is_some() {
+                return Err(VerifyError::InvalidDraftField(
+                    "selector.url_prefix must be an authority URL without query/fragment"
+                        .to_string(),
+                ));
+            }
+            if normalize_uri_path(parsed.path()).is_none() {
+                return Err(VerifyError::InvalidDraftField(
+                    "selector.url_prefix must have a normalized path without percent-encoded bytes"
+                        .to_string(),
+                ));
+            }
+            let Some(methods) = effect.selector.methods.as_ref() else {
+                return Err(VerifyError::InvalidDraftField(
+                    "net.http effect requires selector.methods".to_string(),
+                ));
+            };
+            if methods.len() != 1 || methods[0] != "GET" {
+                return Err(VerifyError::InvalidDraftField(
+                    "net.http selector.methods must be exactly [\"GET\"]".to_string(),
+                ));
+            }
+            if effect.selector.path_prefix.is_some()
+                || effect.selector.key.is_some()
+                || effect.selector.topic.is_some()
+            {
+                return Err(VerifyError::InvalidDraftField(
+                    "net.http effects only allow selector.url_prefix and selector.methods"
+                        .to_string(),
+                ));
+            }
+        }
+        "kv.read" | "kv.write" => {
+            let Some(key) = effect.selector.key.as_deref() else {
+                return Err(VerifyError::InvalidDraftField(
+                    "kv effects require selector.key".to_string(),
+                ));
+            };
+            if key.is_empty() {
+                return Err(VerifyError::InvalidDraftField(
+                    "selector.key must be non-empty".to_string(),
+                ));
+            }
+            if effect.selector.path_prefix.is_some()
+                || effect.selector.url_prefix.is_some()
+                || effect.selector.methods.is_some()
+                || effect.selector.topic.is_some()
+            {
+                return Err(VerifyError::InvalidDraftField(
+                    "kv effects only allow selector.key".to_string(),
+                ));
+            }
+        }
+        "queue.publish" | "queue.consume" => {
+            let Some(topic) = effect.selector.topic.as_deref() else {
+                return Err(VerifyError::InvalidDraftField(
+                    "queue effects require selector.topic".to_string(),
+                ));
+            };
+            if topic.is_empty() {
+                return Err(VerifyError::InvalidDraftField(
+                    "selector.topic must be non-empty".to_string(),
+                ));
+            }
+            if effect.selector.path_prefix.is_some()
+                || effect.selector.url_prefix.is_some()
+                || effect.selector.methods.is_some()
+                || effect.selector.key.is_some()
+            {
+                return Err(VerifyError::InvalidDraftField(
+                    "queue effects only allow selector.topic".to_string(),
+                ));
+            }
+        }
+        "time.now" | "random.bytes" => {
+            if effect.selector.path_prefix.is_some()
+                || effect.selector.url_prefix.is_some()
+                || effect.selector.methods.is_some()
+                || effect.selector.key.is_some()
+                || effect.selector.topic.is_some()
+            {
+                return Err(VerifyError::InvalidDraftField(
+                    "time.now/random.bytes effects require an empty selector object".to_string(),
+                ));
+            }
+        }
+        _ => {
+            return Err(VerifyError::InvalidDraftField(format!(
+                "unsupported effect kind: {}",
+                effect.kind
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn effect_selector_key(effect: &EffectDeclV1Draft) -> Result<String, VerifyError> {
+    match effect.kind.as_str() {
+        "fs.read" | "fs.read_tree" | "fs.write" => {
+            let path = effect.selector.path_prefix.as_deref().ok_or_else(|| {
+                VerifyError::InvalidDraftField(
+                    "filesystem effects require selector.path_prefix".to_string(),
+                )
+            })?;
+            normalize_abs_path(path).ok_or_else(|| {
+                VerifyError::InvalidDraftField(
+                    "selector.path_prefix must be an absolute normalized path".to_string(),
+                )
+            })
+        }
+        "net.http" => {
+            let url = effect.selector.url_prefix.as_deref().ok_or_else(|| {
+                VerifyError::InvalidDraftField(
+                    "net.http effect requires selector.url_prefix".to_string(),
+                )
+            })?;
+            canonical_url_prefix(url)
+        }
+        "kv.read" | "kv.write" => effect.selector.key.clone().ok_or_else(|| {
+            VerifyError::InvalidDraftField("kv effects require selector.key".to_string())
+        }),
+        "queue.publish" | "queue.consume" => effect.selector.topic.clone().ok_or_else(|| {
+            VerifyError::InvalidDraftField("queue effects require selector.topic".to_string())
+        }),
+        "time.now" | "random.bytes" => Ok("{}".to_string()),
+        _ => Err(VerifyError::InvalidDraftField(format!(
+            "unsupported effect kind: {}",
+            effect.kind
+        ))),
+    }
+}
+
+fn canonical_url_prefix(raw: &str) -> Result<String, VerifyError> {
+    let parsed = Url::parse(raw).map_err(|_| {
+        VerifyError::InvalidDraftField("URL value must be absolute and valid".to_string())
+    })?;
+    if !parsed.has_authority() || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(VerifyError::InvalidDraftField(
+            "URL value must be an authority URL without query/fragment".to_string(),
+        ));
+    }
+    let Some(path) = normalize_uri_path(parsed.path()) else {
+        return Err(VerifyError::InvalidDraftField(
+            "URL value path must be normalized without percent-encoded bytes".to_string(),
+        ));
+    };
+    let mut normalized = parsed.clone();
+    normalized.set_path(&path);
+    Ok(normalized.to_string())
 }
 
 pub fn parse_signatures_json(bytes: &[u8]) -> Result<Signatures, VerifyError> {
@@ -514,7 +1053,9 @@ pub fn parse_receipt_json(bytes: &[u8]) -> Result<ExecutionReceipt, VerifyError>
 pub fn parse_receipt_v1_draft_json(bytes: &[u8]) -> Result<ExecutionReceiptV1Draft, VerifyError> {
     let receipt: ExecutionReceiptV1Draft =
         from_slice(bytes).map_err(|_| VerifyError::ReceiptV1DraftJson)?;
-    if receipt.schema_version != "1.0.0-draft" {
+    if receipt.schema_version != RECEIPT_V1_DRAFT_SCHEMA_VERSION
+        && receipt.schema_version != RECEIPT_V1_1_DRAFT_SCHEMA_VERSION
+    {
         return Err(VerifyError::UnsupportedReceiptSchemaVersion(
             receipt.schema_version.clone(),
         ));
@@ -531,6 +1072,18 @@ pub fn parse_receipt_v1_draft_json(bytes: &[u8]) -> Result<ExecutionReceiptV1Dra
         &receipt.receipt_hash,
     ] {
         validate_sha256_prefixed(digest)?;
+    }
+    if let Some(contract_hash) = &receipt.contract_hash {
+        validate_sha256_prefixed(contract_hash)?;
+    }
+    if let Some(instructions_hash) = &receipt.instructions_hash {
+        validate_sha256_prefixed(instructions_hash)?;
+    }
+    if let Some(input_schema_hash) = &receipt.input_schema_hash {
+        validate_sha256_prefixed(input_schema_hash)?;
+    }
+    if let Some(output_schema_hash) = &receipt.output_schema_hash {
+        validate_sha256_prefixed(output_schema_hash)?;
     }
     if receipt
         .caps_requested
@@ -576,6 +1129,44 @@ pub fn parse_receipt_v1_draft_json(bytes: &[u8]) -> Result<ExecutionReceiptV1Dra
         return Err(VerifyError::InvalidDraftField(
             "receipt.attestations items must have non-empty type/value".to_string(),
         ));
+    }
+    if let Some(effects_used) = &receipt.effects_used {
+        if effects_used
+            .iter()
+            .any(|effect| effect.kind.is_empty() || effect.selector.is_empty())
+        {
+            return Err(VerifyError::InvalidDraftField(
+                "receipt.effects_used items must have non-empty kind/selector".to_string(),
+            ));
+        }
+    }
+    match receipt.schema_version.as_str() {
+        RECEIPT_V1_1_DRAFT_SCHEMA_VERSION => {
+            if receipt.contract_hash.is_none()
+                || receipt.instructions_hash.is_none()
+                || receipt.input_schema_hash.is_none()
+                || receipt.output_schema_hash.is_none()
+                || receipt.effects_used.is_none()
+            {
+                return Err(VerifyError::InvalidDraftField(
+                    "schema_version 1.1.0-draft requires contract_hash, instructions_hash, input_schema_hash, output_schema_hash, and effects_used".to_string(),
+                ));
+            }
+        }
+        RECEIPT_V1_DRAFT_SCHEMA_VERSION => {
+            if receipt.contract_hash.is_some()
+                || receipt.instructions_hash.is_some()
+                || receipt.input_schema_hash.is_some()
+                || receipt.output_schema_hash.is_some()
+                || receipt.effects_used.is_some()
+            {
+                return Err(VerifyError::InvalidDraftField(
+                    "schema_version 1.0.0-draft does not allow v1.1 contract receipt fields"
+                        .to_string(),
+                ));
+            }
+        }
+        _ => {}
     }
     Ok(receipt)
 }
@@ -682,6 +1273,18 @@ pub fn verify_receipt_v1_draft_hash(receipt: &ExecutionReceiptV1Draft) -> Result
     validate_sha256_prefixed(&receipt.runtime_version_digest)?;
     validate_sha256_prefixed(&receipt.result_digest)?;
     validate_sha256_prefixed(&receipt.receipt_hash)?;
+    if let Some(contract_hash) = &receipt.contract_hash {
+        validate_sha256_prefixed(contract_hash)?;
+    }
+    if let Some(instructions_hash) = &receipt.instructions_hash {
+        validate_sha256_prefixed(instructions_hash)?;
+    }
+    if let Some(input_schema_hash) = &receipt.input_schema_hash {
+        validate_sha256_prefixed(input_schema_hash)?;
+    }
+    if let Some(output_schema_hash) = &receipt.output_schema_hash {
+        validate_sha256_prefixed(output_schema_hash)?;
+    }
 
     let actual = compute_receipt_v1_draft_hash(receipt)?;
     if actual != receipt.receipt_hash {
@@ -759,6 +1362,29 @@ pub fn compute_result_digest_v1(
     Ok(sha256_prefixed(&bytes))
 }
 
+pub fn compute_contract_hash_v1(contract: &ToolContractV1Draft) -> Result<String, VerifyError> {
+    let bytes = to_jcs_bytes(contract)?;
+    Ok(sha256_prefixed(&bytes))
+}
+
+pub fn compute_schema_hash_v1(schema_ref: &JsonSchemaRefV1Draft) -> Result<String, VerifyError> {
+    match schema_ref {
+        JsonSchemaRefV1Draft::Inline(schema) => {
+            if !schema.is_object() {
+                return Err(VerifyError::InvalidDraftField(
+                    "schema hash requires inline object schema".to_string(),
+                ));
+            }
+            let bytes = to_jcs_bytes(schema)?;
+            Ok(sha256_prefixed(&bytes))
+        }
+        JsonSchemaRefV1Draft::Uri(_) => Err(VerifyError::InvalidDraftField(
+            "schema hash requires inline schema object; URI refs are not supported in 1.1-draft"
+                .to_string(),
+        )),
+    }
+}
+
 pub fn compute_receipt_v1_draft_hash(
     receipt: &ExecutionReceiptV1Draft,
 ) -> Result<String, VerifyError> {
@@ -775,6 +1401,11 @@ pub fn compute_receipt_v1_draft_hash(
         caps_requested: &receipt.caps_requested,
         caps_granted: &receipt.caps_granted,
         caps_used: &receipt.caps_used,
+        contract_hash: receipt.contract_hash.as_deref(),
+        instructions_hash: receipt.instructions_hash.as_deref(),
+        input_schema_hash: receipt.input_schema_hash.as_deref(),
+        output_schema_hash: receipt.output_schema_hash.as_deref(),
+        effects_used: receipt.effects_used.as_deref(),
         result: &receipt.result,
         runtime: &receipt.runtime,
         started_at: receipt.started_at,
@@ -909,6 +1540,110 @@ fn validate_json_schema_ref(value: &JsonSchemaRefV1Draft, field: &str) -> Result
         }
     }
     Ok(())
+}
+
+fn validate_json_schema_ref_inline_only(
+    value: &JsonSchemaRefV1Draft,
+    field: &str,
+) -> Result<(), VerifyError> {
+    match value {
+        JsonSchemaRefV1Draft::Inline(json) => {
+            if !json.is_object() {
+                return Err(VerifyError::InvalidDraftField(format!(
+                    "{field} inline schema must be a JSON object"
+                )));
+            }
+            Ok(())
+        }
+        JsonSchemaRefV1Draft::Uri(_) => Err(VerifyError::InvalidDraftField(format!(
+            "{field} URI refs are not supported for schema_version 1.1.0-draft"
+        ))),
+    }
+}
+
+pub fn verify_effect_capability_equivalence(
+    capabilities: &[Capability],
+    effects: &[EffectDeclV1Draft],
+) -> Result<(), VerifyError> {
+    let mut manifest_caps = HashSet::<String>::new();
+    for capability in capabilities {
+        manifest_caps.insert(normalize_capability_for_equivalence(capability)?);
+    }
+
+    let mut effect_caps = HashSet::<String>::new();
+    for effect in effects {
+        effect_caps.insert(capability_key_for_effect(effect)?);
+    }
+
+    if manifest_caps != effect_caps {
+        let mut manifest_sorted = manifest_caps.into_iter().collect::<Vec<_>>();
+        manifest_sorted.sort();
+        let mut effect_sorted = effect_caps.into_iter().collect::<Vec<_>>();
+        effect_sorted.sort();
+        return Err(VerifyError::InvalidDraftField(format!(
+            "manifest.capabilities must exactly match tool_contract.effects coarse capability set (manifest={manifest_sorted:?}, effects={effect_sorted:?})"
+        )));
+    }
+    Ok(())
+}
+
+fn normalize_capability_for_equivalence(capability: &Capability) -> Result<String, VerifyError> {
+    let value = match capability.kind.as_str() {
+        "fs.read" | "fs.write" => normalize_abs_path(&capability.value).ok_or_else(|| {
+            VerifyError::InvalidDraftField(format!(
+                "capability {} must use an absolute normalized path",
+                capability.kind
+            ))
+        })?,
+        "net.http" => canonical_url_prefix(&capability.value)?,
+        "kv.read" | "kv.write" | "queue.publish" | "queue.consume" => {
+            if capability.value.is_empty() {
+                return Err(VerifyError::InvalidDraftField(format!(
+                    "capability {} must be non-empty",
+                    capability.kind
+                )));
+            }
+            capability.value.clone()
+        }
+        "time.now" | "random.bytes" => {
+            if capability.value.is_empty() {
+                return Err(VerifyError::InvalidDraftField(format!(
+                    "capability {} must be non-empty",
+                    capability.kind
+                )));
+            }
+            "__contract__".to_string()
+        }
+        _ => {
+            return Err(VerifyError::InvalidDraftField(format!(
+                "unsupported capability for 1.1-draft effect equivalence: {}",
+                capability.kind
+            )));
+        }
+    };
+    Ok(format!("{}:{value}", capability.kind))
+}
+
+fn capability_key_for_effect(effect: &EffectDeclV1Draft) -> Result<String, VerifyError> {
+    let key = match effect.kind.as_str() {
+        "fs.read" => format!("fs.read:{}", effect_selector_key(effect)?),
+        "fs.read_tree" => format!("fs.read:{}", effect_selector_key(effect)?),
+        "fs.write" => format!("fs.write:{}", effect_selector_key(effect)?),
+        "net.http" => format!("net.http:{}", effect_selector_key(effect)?),
+        "kv.read" => format!("kv.read:{}", effect_selector_key(effect)?),
+        "kv.write" => format!("kv.write:{}", effect_selector_key(effect)?),
+        "queue.publish" => format!("queue.publish:{}", effect_selector_key(effect)?),
+        "queue.consume" => format!("queue.consume:{}", effect_selector_key(effect)?),
+        "time.now" => "time.now:__contract__".to_string(),
+        "random.bytes" => "random.bytes:__contract__".to_string(),
+        _ => {
+            return Err(VerifyError::InvalidDraftField(format!(
+                "unsupported effect kind: {}",
+                effect.kind
+            )));
+        }
+    };
+    Ok(key)
 }
 
 fn is_capability_allowed(capability: &Capability, ceiling: &CapabilityCeiling) -> bool {
@@ -1255,10 +1990,13 @@ mod tests {
     fn parses_manifest_json() {
         let raw = br#"{
             "schema_version":"1.0.0-draft",
+            "id":"provenact.echo",
             "name":"echo",
             "version":"1.0.0",
             "entrypoint":"run",
             "artifact":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "inputs_schema":{"type":"object"},
+            "outputs_schema":{"type":"object"},
             "capabilities":[{"kind":"net.http","value":"https://example.com"}],
             "signers":["alice.dev"]
         }"#;
@@ -1517,6 +2255,11 @@ mod tests {
             caps_requested: vec!["env:HOME".to_string()],
             caps_granted: vec!["env:HOME".to_string()],
             caps_used,
+            contract_hash: None,
+            instructions_hash: None,
+            input_schema_hash: None,
+            output_schema_hash: None,
+            effects_used: None,
             result,
             runtime,
             started_at: 10,
@@ -1595,6 +2338,12 @@ capability_ceiling:
                 .to_string(),
             capabilities: vec![],
             signers: vec!["alice.dev".to_string()],
+            id: None,
+            inputs_schema: None,
+            outputs_schema: None,
+            provenance: None,
+            compatibility: None,
+            tool_contract: None,
         };
         let signatures = Signatures {
             artifact: manifest.artifact.clone(),
@@ -1635,6 +2384,12 @@ capability_ceiling:
                 .to_string(),
             capabilities: vec![],
             signers: vec!["alice.dev".to_string()],
+            id: None,
+            inputs_schema: None,
+            outputs_schema: None,
+            provenance: None,
+            compatibility: None,
+            tool_contract: None,
         };
         let signatures = Signatures {
             artifact: manifest.artifact.clone(),
@@ -1678,6 +2433,12 @@ capability_ceiling:
                 .to_string(),
             capabilities: vec![],
             signers: vec!["alice.dev".to_string(), "bob.dev".to_string()],
+            id: None,
+            inputs_schema: None,
+            outputs_schema: None,
+            provenance: None,
+            compatibility: None,
+            tool_contract: None,
         };
         let signatures = Signatures {
             artifact: manifest.artifact.clone(),

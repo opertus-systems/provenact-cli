@@ -13,7 +13,9 @@ use std::time::{Duration, Instant};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use common::{temp_dir, write};
 use ed25519_dalek::SigningKey;
-use provenact_verifier::{parse_receipt_json, sha256_prefixed};
+use provenact_verifier::{
+    parse_receipt_json, parse_receipt_v1_draft_json, sha256_prefixed, verify_receipt_v1_draft_hash,
+};
 use serde_json::json;
 use wat::parse_str as wat_parse_str;
 
@@ -887,6 +889,174 @@ fn hostcalls_http_fetch_blocks_redirects() {
     assert!(
         !target_hit.load(Ordering::SeqCst),
         "http_fetch must not follow redirects"
+    );
+}
+
+#[test]
+fn hostcalls_contract_effect_limit_denial_is_denied_and_audited() {
+    let root = temp_dir("hostcalls_contract_effect_limit_denial");
+    let denied_path = "/tmp/provenact-fs/contract-denied.txt";
+    fs::create_dir_all("/tmp/provenact-fs").expect("fs root");
+    fs::write(denied_path, b"denied-content").expect("seed file");
+
+    let wat = r#"(module
+  (import "provenact" "fs_read_file" (func $fs_read_file (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 0) "PATH_PLACEHOLDER")
+  (func (export "run") (result i32)
+    i32.const 0
+    i32.const PATH_LEN_PLACEHOLDER
+    i32.const 256
+    i32.const 1024
+    call $fs_read_file
+  )
+)"#;
+    let wat = wat
+        .replace("PATH_PLACEHOLDER", denied_path)
+        .replace("PATH_LEN_PLACEHOLDER", &denied_path.len().to_string());
+    let wasm = wat_parse_str(&wat).expect("wat should compile");
+
+    let wasm_path = root.join("input.wasm");
+    let manifest_path = root.join("input.manifest.json");
+    let bundle_dir = root.join("bundle");
+    let secret_key_path = root.join("signing.key");
+    let keys_path = root.join("public-keys.json");
+    let policy_path = root.join("policy.json");
+    let input_path = root.join("input.json");
+    let receipt_path = root.join("receipt.json");
+
+    write(&wasm_path, &wasm);
+    let artifact = sha256_prefixed(&wasm);
+    let manifest = json!({
+      "schema_version": "1.1.0-draft",
+      "id": "provenact.hostcalls.contract.effect_limit_denial",
+      "name": "hostcalls.contract.effect_limit_denial",
+      "version": "0.1.0",
+      "entrypoint": "run",
+      "artifact": artifact,
+      "inputs_schema": { "type": "object" },
+      "outputs_schema": { "type": "object" },
+      "capabilities": [
+        { "kind": "fs.read", "value": "/tmp/provenact-fs" }
+      ],
+      "signers": [ "alice.dev" ],
+      "tool_contract": {
+        "schema_version": "1.1.0-draft",
+        "instructions": {
+          "format": "text/plain",
+          "text": "Read only approved paths.",
+          "hash": "sha256:a6e22d74028dc4ecd187900e8dfa3f6e7db24ae4cd897b79747939a9e7131713"
+        },
+        "effects": [
+          {
+            "kind": "fs.read",
+            "selector": { "path_prefix": "/tmp/provenact-fs" },
+            "limits": { "max_calls": 1, "max_bytes_in": 0, "max_bytes_out": 1 }
+          }
+        ],
+        "determinism": {
+          "mode": "deterministic",
+          "required_capabilities": []
+        },
+        "limits": {
+          "max_duration_ms": 2000,
+          "max_memory_bytes": 1048576,
+          "max_input_bytes": 4096,
+          "max_output_bytes": 4096,
+          "max_effect_events": 8
+        }
+      }
+    });
+    write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest)
+            .expect("manifest serialize")
+            .as_slice(),
+    );
+
+    let pack = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["pack", "--bundle"])
+        .arg(&bundle_dir)
+        .args(["--wasm"])
+        .arg(&wasm_path)
+        .args(["--manifest"])
+        .arg(&manifest_path)
+        .arg("--allow-experimental")
+        .output()
+        .expect("pack should run");
+    assert!(pack.status.success(), "{pack:?}");
+
+    let signing_key = SigningKey::from_bytes(&[63u8; 32]);
+    write(
+        &secret_key_path,
+        STANDARD.encode(signing_key.to_bytes()).as_bytes(),
+    );
+    let sign = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["sign", "--bundle"])
+        .arg(&bundle_dir)
+        .args(["--signer", "alice.dev", "--secret-key"])
+        .arg(&secret_key_path)
+        .arg("--allow-experimental")
+        .output()
+        .expect("sign should run");
+    assert!(sign.status.success(), "{sign:?}");
+
+    let keys = format!(
+        "{{\"alice.dev\":\"{}\"}}",
+        STANDARD.encode(signing_key.verifying_key().to_bytes())
+    );
+    write(&keys_path, keys.as_bytes());
+    let policy = json!({
+      "version": 1,
+      "trusted_signers": ["alice.dev"],
+      "capability_ceiling": {
+        "fs": { "read": ["/tmp/provenact-fs"] }
+      }
+    });
+    write(
+        &policy_path,
+        serde_json::to_vec_pretty(&policy)
+            .expect("policy serialize")
+            .as_slice(),
+    );
+    write(&input_path, br#"{}"#);
+
+    let run = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["run", "--bundle"])
+        .arg(&bundle_dir)
+        .args(["--keys"])
+        .arg(&keys_path)
+        .args(["--keys-digest"])
+        .arg(sha256_prefixed(
+            &fs::read(&keys_path).expect("keys should exist"),
+        ))
+        .args(["--policy"])
+        .arg(&policy_path)
+        .args(["--input"])
+        .arg(&input_path)
+        .args(["--receipt"])
+        .arg(&receipt_path)
+        .args(["--allow-experimental", "--receipt-format", "v1-draft"])
+        .output()
+        .expect("run should run");
+    assert!(!run.status.success(), "{run:?}");
+
+    let receipt = parse_receipt_v1_draft_json(&fs::read(&receipt_path).expect("receipt read"))
+        .expect("receipt parse");
+    verify_receipt_v1_draft_hash(&receipt).expect("receipt hash verify");
+    assert_eq!(receipt.schema_version, "1.1.0-draft");
+    assert_eq!(receipt.result.status, "failure");
+    assert_eq!(receipt.result.code, "execution_error");
+    let effects_used = receipt
+        .effects_used
+        .expect("effects_used should be present");
+    let fs_read_effect = effects_used
+        .iter()
+        .find(|effect| effect.kind == "fs.read")
+        .expect("fs.read effect should be tracked");
+    assert!(
+        fs_read_effect.denied_calls >= 1,
+        "expected denied fs.read call to be audited"
     );
 }
 

@@ -4,7 +4,7 @@
   "source_repo": {
     "name": "opertus-systems/provenact-spec",
     "url": "https://github.com/opertus-systems/provenact-spec",
-    "commit": "fe677208ab9025c44884de36fe6ebf999889048b"
+    "commit": "e76349a330342875e17f9c9fdaeb88f2e31011b4"
   },
   "artifacts": [
     {
@@ -12,14 +12,14 @@
       "source_path": "spec",
       "target_path": "spec",
       "target_file_count": 31,
-      "target_manifest_sha256": "0f060ffdf6548e327ef4c1347312aea2c62fa159292e3032ed2c7cad2e604277"
+      "target_manifest_sha256": "2ba22b2753c62cd13dcb0d300d476030835e43d847de3ef33c2bfc1066665c2b"
     },
     {
       "name": "test-vectors",
       "source_path": "test-vectors",
       "target_path": "test-vectors",
-      "target_file_count": 73,
-      "target_manifest_sha256": "721e4ab42915060ffda1d5cf9835ca04e567b53aaabebe3a7e26f4d0620bd0b2"
+      "target_file_count": 83,
+      "target_manifest_sha256": "8e2d23ebf6bd22298f29cd68fbd25de61e96c7482e4d21ce9432f02e654d8c3a"
     }
   ]
 }

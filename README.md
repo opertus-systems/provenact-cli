@@ -78,6 +78,9 @@ Stability notes:
 - v0 bundle/manifest/policy/receipt schemas are normative and SemVer-governed.
 - Fields and commands marked `experimental` are explicitly unstable.
 - `provenact-cli run` requires `--receipt`; successful runs always emit a receipt.
+- Experimental `manifest.schema_version: "1.1.0-draft"` adds strict, embedded
+  `tool_contract` enforcement (typed effects, IO schema validation, contract-bound
+  v1 receipts).
 - External timestamp authority is out of scope for v0 receipts.
 - Reproducible builds are a roadmap objective; v0 does not yet publish CI build
   reproducibility proofs.
@@ -120,6 +123,9 @@ Assumptions and non-goals are defined in `spec/threat-model.md`.
 
 5. Run:
 `provenact-cli run --bundle ./bundle --keys ./public-keys.json --keys-digest "$KEYS_DIGEST" --policy ./policy.json --input ./input.json --receipt ./receipt.json`
+
+Experimental v1.1 contract run:
+`provenact-cli run --bundle ./bundle --keys ./public-keys.json --keys-digest "$KEYS_DIGEST" --policy ./policy.json --input ./input.json --receipt ./receipt.v1.json --allow-experimental --receipt-format v1-draft`
 
 ## Specification Notes
 

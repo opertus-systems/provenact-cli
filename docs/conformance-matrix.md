@@ -11,7 +11,7 @@ Status legend:
 ## Mirror Source Pin
 
 - `spec/` + `test-vectors/` mirror source:
-  `opertus-systems/provenact-spec@fe677208ab9025c44884de36fe6ebf999889048b`
+  `opertus-systems/provenact-spec@e76349a330342875e17f9c9fdaeb88f2e31011b4`
   (recorded in `sync-manifest.json`).
 
 ## Matrix
@@ -41,8 +41,8 @@ Status legend:
 
 | Draft Source | Current Enforcement Evidence | Status | Notes |
 | --- | --- | --- | --- |
-| `spec/skill-format/manifest.v1.experimental.schema.json` | `core/verifier/tests/manifest_v1_draft_vectors.rs` + `test-vectors/skill-format/manifest-v1/` | covered | Draft schema-shape validation with parser + explicit field checks |
-| `spec/execution-receipt.v1.experimental.schema.json` | `core/verifier/tests/receipt_v1_draft_vectors.rs` + `test-vectors/receipt-v1/` | covered | Draft schema-shape validation with parser + explicit field checks |
+| `spec/skill-format/manifest.v1.experimental.schema.json` | `core/verifier/tests/manifest_v1_draft_vectors.rs` + `test-vectors/skill-format/manifest-v1/` + CLI experimental validation tests | covered | Includes `1.0.0-draft` and strict `1.1.0-draft` contract vectors (hash mismatch, selector mismatch, determinism violations, capability/effect mismatch) |
+| `spec/execution-receipt.v1.experimental.schema.json` | `core/verifier/tests/receipt_v1_draft_vectors.rs` + `test-vectors/receipt-v1/` + CLI receipt verification tests | covered | Includes `1.1.0-draft` receipt contract fields and tamper rejection for contract/schema/effects hash-bound fields |
 
 ## Remaining Hardening Opportunities
 

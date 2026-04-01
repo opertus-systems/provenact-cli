@@ -22,8 +22,31 @@ fn experimental_validate_manifest_v1_accepts_good_vector() {
 }
 
 #[test]
+fn experimental_validate_manifest_v1_accepts_good_contract_vector() {
+    let manifest_path = vectors_root().join("skill-format/manifest-v1/good/contract-v1.1.json");
+    let out = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["experimental-validate-manifest-v1", "--manifest"])
+        .arg(&manifest_path)
+        .output()
+        .expect("command should run");
+    assert!(out.status.success(), "{:?}", out);
+}
+
+#[test]
 fn experimental_validate_manifest_v1_rejects_bad_vector() {
     let manifest_path = vectors_root().join("skill-format/manifest-v1/bad/missing_id.json");
+    let out = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["experimental-validate-manifest-v1", "--manifest"])
+        .arg(&manifest_path)
+        .output()
+        .expect("command should run");
+    assert!(!out.status.success(), "{:?}", out);
+}
+
+#[test]
+fn experimental_validate_manifest_v1_rejects_bad_contract_vector() {
+    let manifest_path = vectors_root()
+        .join("skill-format/manifest-v1/bad/contract_instructions_hash_mismatch.json");
     let out = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
         .args(["experimental-validate-manifest-v1", "--manifest"])
         .arg(&manifest_path)
@@ -50,8 +73,31 @@ fn experimental_validate_receipt_v1_accepts_good_vector() {
 }
 
 #[test]
+fn experimental_validate_receipt_v1_accepts_good_contract_vector() {
+    let receipt_path = vectors_root().join("receipt-v1/good/contract-success-1.1.json");
+    let out = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["experimental-validate-receipt-v1", "--receipt"])
+        .arg(&receipt_path)
+        .output()
+        .expect("command should run");
+    assert!(out.status.success(), "{:?}", out);
+}
+
+#[test]
 fn experimental_validate_receipt_v1_rejects_bad_vector() {
     let receipt_path = vectors_root().join("receipt-v1/bad/missing_policy_hash.json");
+    let out = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["experimental-validate-receipt-v1", "--receipt"])
+        .arg(&receipt_path)
+        .output()
+        .expect("command should run");
+    assert!(!out.status.success(), "{:?}", out);
+}
+
+#[test]
+fn experimental_validate_receipt_v1_rejects_bad_contract_vector() {
+    let receipt_path =
+        vectors_root().join("receipt-v1/bad/contract_missing_required_fields_1.1.json");
     let out = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
         .args(["experimental-validate-receipt-v1", "--receipt"])
         .arg(&receipt_path)

@@ -2,7 +2,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use provenact_verifier::compute_contract_hash_v1;
+use serde::{Deserialize, Serialize};
 
 use crate::constants::MAX_JSON_BYTES;
 use crate::fileio::{read_file_limited, write_file};
@@ -34,17 +35,80 @@ struct InstallIndexEntry {
 
 #[derive(Debug, Deserialize)]
 struct ManifestStub {
+    #[serde(default)]
+    schema_version: Option<String>,
     name: String,
     version: String,
     entrypoint: String,
     capabilities: Vec<CapabilityStub>,
     signers: Vec<String>,
+    #[serde(default)]
+    tool_contract: Option<ToolContractStub>,
 }
 
 #[derive(Debug, Deserialize)]
 struct CapabilityStub {
     kind: String,
     value: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ToolContractStub {
+    schema_version: String,
+    instructions: ToolInstructionsStub,
+    effects: Vec<EffectDeclStub>,
+    determinism: DeterminismStub,
+    limits: ToolContractLimitsStub,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ToolInstructionsStub {
+    format: String,
+    text: String,
+    hash: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct EffectDeclStub {
+    kind: String,
+    selector: EffectSelectorStub,
+    limits: EffectLimitsStub,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct EffectSelectorStub {
+    #[serde(default)]
+    path_prefix: Option<String>,
+    #[serde(default)]
+    url_prefix: Option<String>,
+    #[serde(default)]
+    methods: Option<Vec<String>>,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    topic: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct EffectLimitsStub {
+    max_calls: u64,
+    max_bytes_in: u64,
+    max_bytes_out: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DeterminismStub {
+    mode: String,
+    required_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ToolContractLimitsStub {
+    max_duration_ms: u64,
+    max_memory_bytes: u64,
+    max_input_bytes: u64,
+    max_output_bytes: u64,
+    max_effect_events: u64,
 }
 
 pub struct ExportRequest {
@@ -121,12 +185,13 @@ fn write_skill_export(
     let skill_md = render_skill_md(manifest, skill_digest);
     write_file(&skill_dir.join("SKILL.md"), skill_md.as_bytes())?;
 
-    let run_sh = render_run_sh(store_dir, policy_rel, skill_digest);
+    let contract_enabled = is_contract_enabled(manifest);
+    let run_sh = render_run_sh(store_dir, policy_rel, skill_digest, contract_enabled);
     let run_sh_path = skill_dir.join("scripts").join("run.sh");
     write_file(&run_sh_path, run_sh.as_bytes())?;
     set_executable_if_unix(&run_sh_path)?;
 
-    let run_ps1 = render_run_ps1(store_dir, policy_rel, skill_digest);
+    let run_ps1 = render_run_ps1(store_dir, policy_rel, skill_digest, contract_enabled);
     write_file(
         &skill_dir.join("scripts").join("run.ps1"),
         run_ps1.as_bytes(),
@@ -148,7 +213,7 @@ fn write_skill_export(
 }
 
 fn render_skill_md(manifest: &ManifestStub, skill_digest: &str) -> String {
-    format!(
+    let mut body = format!(
         "---\nname: {}\ndescription: Run '{}' via Provenact verification and ide-safe policy.\n---\n\nUse this skill when you need deterministic execution of `{}` and want capability enforcement with auditable receipts.\n\n## Boundaries\n- Do not run ad-hoc shell commands for this skill.\n- Always use the generated wrappers in `scripts/`.\n- Keep execution inside Provenact policy enforcement and receipt generation.\n\n## Run\n- macOS/Linux: `./scripts/run.sh <input.json> [receipt.json]`\n- Windows: `./scripts/run.ps1 <input.json> [receipt.json]`\n\n## Notes\n- Skill digest: `{}`\n- Manifest version: `{}`\n- Entrypoint: `{}`\n",
         yaml_quote(&manifest.name),
         manifest.name,
@@ -156,23 +221,83 @@ fn render_skill_md(manifest: &ManifestStub, skill_digest: &str) -> String {
         skill_digest,
         manifest.version,
         manifest.entrypoint
-    )
+    );
+
+    if let Some(contract) = manifest.tool_contract.as_ref() {
+        body.push_str("\n## Immutable Tool Contract (Experimental)\n");
+        body.push_str(&format!(
+            "- Contract schema_version: `{}`\n- Contract hash: `{}`\n- Determinism mode: `{}`\n- Required determinism capabilities: `{}`\n- Runtime limits: duration={}ms memory={}B input={}B output={}B effect_events={}\n- Instructions format: `{}`\n- Instructions hash: `{}`\n",
+            contract.schema_version,
+            contract_hash_markdown(contract),
+            contract.determinism.mode,
+            contract.determinism.required_capabilities.join(","),
+            contract.limits.max_duration_ms,
+            contract.limits.max_memory_bytes,
+            contract.limits.max_input_bytes,
+            contract.limits.max_output_bytes,
+            contract.limits.max_effect_events,
+            contract.instructions.format,
+            contract.instructions.hash
+        ));
+        body.push_str("\n### Instructions (Immutable Text)\n```text\n");
+        body.push_str(&contract.instructions.text);
+        body.push_str("\n```\n");
+        body.push_str("\n### Declared Effects\n");
+        if contract.effects.is_empty() {
+            body.push_str("- none\n");
+        } else {
+            for effect in &contract.effects {
+                body.push_str(&format!(
+                    "- `{}` selector=`{}` limits=(calls:{}, bytes_in:{}, bytes_out:{})\n",
+                    effect.kind,
+                    effect_selector_summary(&effect.selector),
+                    effect.limits.max_calls,
+                    effect.limits.max_bytes_in,
+                    effect.limits.max_bytes_out
+                ));
+            }
+        }
+    }
+
+    body
 }
 
-fn render_run_sh(store_dir: &Path, policy_rel: &str, skill_digest: &str) -> String {
+fn render_run_sh(
+    store_dir: &Path,
+    policy_rel: &str,
+    skill_digest: &str,
+    contract_enabled: bool,
+) -> String {
+    let extra_flags = if contract_enabled {
+        " \\\n  --allow-experimental \\\n  --receipt-format v1-draft"
+    } else {
+        ""
+    };
     format!(
-        "#!/usr/bin/env bash\nset -euo pipefail\n\nif [ \"${{#}}\" -lt 1 ] || [ \"${{#}}\" -gt 2 ]; then\n  echo \"usage: $0 <input.json> [receipt.json]\" >&2\n  exit 64\nfi\n\nif [ -z \"${{PROVENACT_KEYS:-}}\" ] || [ -z \"${{PROVENACT_KEYS_DIGEST:-}}\" ]; then\n  echo \"set PROVENACT_KEYS and PROVENACT_KEYS_DIGEST before running this wrapper\" >&2\n  exit 64\nfi\n\nINPUT=\"$1\"\nRECEIPT=\"${{2:-./receipt.json}}\"\nSCRIPT_DIR=\"$(cd \"$(dirname \"${{BASH_SOURCE[0]}}\")\" && pwd)\"\nPOLICY=\"$SCRIPT_DIR/{}\"\nBUNDLE=\"{}\"\nPROVENACT_BIN=\"${{PROVENACT_BIN:-provenact-cli}}\"\n\n\"$PROVENACT_BIN\" run \\\n  --bundle \"$BUNDLE\" \\\n  --keys \"$PROVENACT_KEYS\" \\\n  --keys-digest \"$PROVENACT_KEYS_DIGEST\" \\\n  --policy \"$POLICY\" \\\n  --input \"$INPUT\" \\\n  --receipt \"$RECEIPT\"\n",
+        "#!/usr/bin/env bash\nset -euo pipefail\n\nif [ \"${{#}}\" -lt 1 ] || [ \"${{#}}\" -gt 2 ]; then\n  echo \"usage: $0 <input.json> [receipt.json]\" >&2\n  exit 64\nfi\n\nif [ -z \"${{PROVENACT_KEYS:-}}\" ] || [ -z \"${{PROVENACT_KEYS_DIGEST:-}}\" ]; then\n  echo \"set PROVENACT_KEYS and PROVENACT_KEYS_DIGEST before running this wrapper\" >&2\n  exit 64\nfi\n\nINPUT=\"$1\"\nRECEIPT=\"${{2:-./receipt.json}}\"\nSCRIPT_DIR=\"$(cd \"$(dirname \"${{BASH_SOURCE[0]}}\")\" && pwd)\"\nPOLICY=\"$SCRIPT_DIR/{}\"\nBUNDLE=\"{}\"\nPROVENACT_BIN=\"${{PROVENACT_BIN:-provenact-cli}}\"\n\n\"$PROVENACT_BIN\" run \\\n  --bundle \"$BUNDLE\" \\\n  --keys \"$PROVENACT_KEYS\" \\\n  --keys-digest \"$PROVENACT_KEYS_DIGEST\" \\\n  --policy \"$POLICY\" \\\n  --input \"$INPUT\" \\\n  --receipt \"$RECEIPT\"{}\n",
         policy_rel,
-        store_dir.display()
+        store_dir.display(),
+        extra_flags
     )
     + &format!("# exported-skill={}\n", skill_digest)
 }
 
-fn render_run_ps1(store_dir: &Path, policy_rel: &str, skill_digest: &str) -> String {
+fn render_run_ps1(
+    store_dir: &Path,
+    policy_rel: &str,
+    skill_digest: &str,
+    contract_enabled: bool,
+) -> String {
+    let extra_flags = if contract_enabled {
+        "  --allow-experimental `\n  --receipt-format v1-draft `\n"
+    } else {
+        ""
+    };
     format!(
-        "param(\n  [Parameter(Mandatory=$true)][string]$InputPath,\n  [Parameter(Mandatory=$false)][string]$ReceiptPath = \"./receipt.json\"\n)\n\nif ([string]::IsNullOrEmpty($env:PROVENACT_KEYS) -or [string]::IsNullOrEmpty($env:PROVENACT_KEYS_DIGEST)) {{\n  Write-Error \"set PROVENACT_KEYS and PROVENACT_KEYS_DIGEST before running this wrapper\"\n  exit 64\n}}\n\n$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path\n$PolicyPath = Join-Path $ScriptDir \"{}\"\n$BundlePath = \"{}\"\n$ProvenactBin = if ([string]::IsNullOrEmpty($env:PROVENACT_BIN)) {{ \"provenact-cli\" }} else {{ $env:PROVENACT_BIN }}\n\n& $ProvenactBin run `\n  --bundle $BundlePath `\n  --keys $env:PROVENACT_KEYS `\n  --keys-digest $env:PROVENACT_KEYS_DIGEST `\n  --policy $PolicyPath `\n  --input $InputPath `\n  --receipt $ReceiptPath\n\n# exported-skill={}\n",
+        "param(\n  [Parameter(Mandatory=$true)][string]$InputPath,\n  [Parameter(Mandatory=$false)][string]$ReceiptPath = \"./receipt.json\"\n)\n\nif ([string]::IsNullOrEmpty($env:PROVENACT_KEYS) -or [string]::IsNullOrEmpty($env:PROVENACT_KEYS_DIGEST)) {{\n  Write-Error \"set PROVENACT_KEYS and PROVENACT_KEYS_DIGEST before running this wrapper\"\n  exit 64\n}}\n\n$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path\n$PolicyPath = Join-Path $ScriptDir \"{}\"\n$BundlePath = \"{}\"\n$ProvenactBin = if ([string]::IsNullOrEmpty($env:PROVENACT_BIN)) {{ \"provenact-cli\" }} else {{ $env:PROVENACT_BIN }}\n\n& $ProvenactBin run `\n  --bundle $BundlePath `\n  --keys $env:PROVENACT_KEYS `\n  --keys-digest $env:PROVENACT_KEYS_DIGEST `\n  --policy $PolicyPath `\n  --input $InputPath `\n  --receipt $ReceiptPath `\n{}\n# exported-skill={}\n",
         policy_rel.replace('/', "\\"),
         store_dir.display(),
+        extra_flags,
         skill_digest
     )
 }
@@ -229,6 +354,39 @@ fn render_references_readme(manifest: &ManifestStub, skill_digest: &str) -> Stri
         "# {} reference\n\n- skill digest: `{}`\n- manifest version: `{}`\n- entrypoint: `{}`\n\n## Declared capabilities\n{}\n\n## ide-safe profile\n- network denied by default (`net: []`)\n- filesystem write restricted to `/tmp/provenact-scratch`\n- `exec` denied\n- `time` denied\n- trusted signers pinned to `manifest.signers`\n",
         manifest.name, skill_digest, manifest.version, manifest.entrypoint, cap_lines
     )
+}
+
+fn is_contract_enabled(manifest: &ManifestStub) -> bool {
+    manifest.schema_version.as_deref() == Some("1.1.0-draft") && manifest.tool_contract.is_some()
+}
+
+fn contract_hash_markdown(contract: &ToolContractStub) -> String {
+    let value = match serde_json::to_value(contract) {
+        Ok(value) => value,
+        Err(_) => return "unavailable".to_string(),
+    };
+    let typed = match serde_json::from_value(value) {
+        Ok(value) => value,
+        Err(_) => return "unavailable".to_string(),
+    };
+    compute_contract_hash_v1(&typed).unwrap_or_else(|_| "unavailable".to_string())
+}
+
+fn effect_selector_summary(selector: &EffectSelectorStub) -> String {
+    if let Some(path_prefix) = selector.path_prefix.as_deref() {
+        return format!("path_prefix={path_prefix}");
+    }
+    if let Some(url_prefix) = selector.url_prefix.as_deref() {
+        let methods = selector.methods.clone().unwrap_or_default().join(",");
+        return format!("url_prefix={url_prefix};methods={methods}");
+    }
+    if let Some(key) = selector.key.as_deref() {
+        return format!("key={key}");
+    }
+    if let Some(topic) = selector.topic.as_deref() {
+        return format!("topic={topic}");
+    }
+    "{}".to_string()
 }
 
 fn skill_dir_name(name: &str, skill_digest: &str) -> String {

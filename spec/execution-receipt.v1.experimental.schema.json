@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Execution Receipt (v1 Experimental)",
-  "description": "Non-normative draft schema for v1 compatibility planning.",
+  "description": "Experimental schema for execution receipts v1.0.0-draft and v1.1.0-draft.",
   "type": "object",
   "required": [
     "schema_version",
@@ -27,7 +27,10 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.0.0-draft"
+      "enum": [
+        "1.0.0-draft",
+        "1.1.0-draft"
+      ]
     },
     "artifact": {
       "type": "string",
@@ -82,14 +85,77 @@
         "minLength": 1
       }
     },
+    "contract_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "instructions_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "input_schema_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "output_schema_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "effects_used": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "selector",
+          "calls",
+          "bytes_in",
+          "bytes_out",
+          "denied_calls"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "selector": {
+            "type": "string",
+            "minLength": 1
+          },
+          "calls": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "bytes_in": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "bytes_out": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "denied_calls": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
     "result": {
       "type": "object",
-      "required": ["status", "code"],
+      "required": [
+        "status",
+        "code"
+      ],
       "additionalProperties": false,
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["success", "failure"]
+          "enum": [
+            "success",
+            "failure"
+          ]
         },
         "code": {
           "type": "string",
@@ -102,7 +168,10 @@
     },
     "runtime": {
       "type": "object",
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "additionalProperties": false,
       "properties": {
         "name": {
@@ -129,13 +198,18 @@
     },
     "timestamp_strategy": {
       "type": "string",
-      "enum": ["local_untrusted_unix_seconds"]
+      "enum": [
+        "local_untrusted_unix_seconds"
+      ]
     },
     "attestations": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["type", "value"],
+        "required": [
+          "type",
+          "value"
+        ],
         "additionalProperties": false,
         "properties": {
           "type": {
@@ -153,5 +227,65 @@
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0.0-draft"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "contract_hash"
+              ]
+            },
+            {
+              "required": [
+                "instructions_hash"
+              ]
+            },
+            {
+              "required": [
+                "input_schema_hash"
+              ]
+            },
+            {
+              "required": [
+                "output_schema_hash"
+              ]
+            },
+            {
+              "required": [
+                "effects_used"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "1.1.0-draft"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "contract_hash",
+          "instructions_hash",
+          "input_schema_hash",
+          "output_schema_hash",
+          "effects_used"
+        ]
+      }
+    }
+  ]
 }

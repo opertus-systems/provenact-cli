@@ -70,6 +70,11 @@ Each adapter should map ecosystem input into the same Provenact invoke lifecycle
 - Draft `Skill Manifest v1` RFC (non-normative draft).
 - Draft `Execution Receipt v1` RFC (non-normative draft).
 - Define compatibility profile and version negotiation rules.
+- Experimental `1.1.0-draft` contract shape finalized for:
+  - immutable instructions (`text` + `hash`)
+  - typed effect declarations/selectors/limits
+  - determinism declaration
+  - runtime resource ceilings
 
 ### Phase 2 (Weeks 3-6): Packaging + Verification
 
@@ -88,6 +93,11 @@ Adapter start gate (must pass before any adapter implementation):
 - Validate native cross-runtime compatibility with shared vectors.
 - Implement one optional adapter for ecosystem convenience.
 - Publish mapping docs from adapter contracts to Provenact contracts.
+- Enforce contract runtime checks in native `run` path:
+  - pre-run input schema validation
+  - hostcall effect authorization/limits
+  - post-run output schema validation
+  - contract-bound v1.1 receipts
 
 ### Phase 4 (Weeks 11-12): Conformance and Publication
 

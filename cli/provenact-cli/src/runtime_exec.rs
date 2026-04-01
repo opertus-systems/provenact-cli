@@ -16,7 +16,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::os::unix::fs::OpenOptionsExt;
 
 use getrandom::fill as random_fill_os;
-use provenact_verifier::{sha256_prefixed, Capability};
+use provenact_verifier::{
+    sha256_prefixed, Capability, EffectDeclV1Draft, EffectUseV1Draft, ToolContractV1Draft,
+};
 use url::Url;
 use wasmtime::{
     Caller, Config, Engine, Linker, Memory, Module, Store, StoreLimits, StoreLimitsBuilder,
@@ -43,11 +45,50 @@ struct HostState {
     output: Option<Vec<u8>>,
     capabilities: HashMap<String, Vec<String>>,
     caps_used: BTreeSet<String>,
+    contract: Option<RuntimeContractState>,
 }
 
 pub struct ExecutionOutcome {
     pub outputs: Vec<u8>,
     pub caps_used: Vec<String>,
+    pub effects_used: Option<Vec<EffectUseV1Draft>>,
+}
+
+pub struct ExecutionError {
+    pub message: String,
+    pub outputs: Vec<u8>,
+    pub caps_used: Vec<String>,
+    pub effects_used: Option<Vec<EffectUseV1Draft>>,
+}
+
+#[derive(Debug, Clone)]
+enum RuntimeEffectSelector {
+    PathPrefix(String),
+    NetHttpPrefix(Url),
+    Key(String),
+    Topic(String),
+    Empty,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeEffectState {
+    kind: String,
+    selector: RuntimeEffectSelector,
+    selector_repr: String,
+    max_calls: u64,
+    max_bytes_in: u64,
+    max_bytes_out: u64,
+    calls: u64,
+    bytes_in: u64,
+    bytes_out: u64,
+    denied_calls: u64,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeContractState {
+    effects: Vec<RuntimeEffectState>,
+    max_effect_events: u64,
+    effect_events: u64,
 }
 
 pub fn execute_wasm(
@@ -55,12 +96,23 @@ pub fn execute_wasm(
     entrypoint: &str,
     input: &[u8],
     capabilities: &[Capability],
-) -> Result<ExecutionOutcome, String> {
+    max_memory_bytes: Option<usize>,
+    contract: Option<&ToolContractV1Draft>,
+) -> Result<ExecutionOutcome, ExecutionError> {
     let mut config = Config::new();
     config.consume_fuel(true);
-    let engine = Engine::new(&config).map_err(|e| format!("wasm engine init failed: {e}"))?;
-    let module =
-        Module::from_binary(&engine, wasm).map_err(|e| format!("invalid wasm module: {e}"))?;
+    let engine = Engine::new(&config).map_err(|e| ExecutionError {
+        message: format!("wasm engine init failed: {e}"),
+        outputs: Vec::new(),
+        caps_used: Vec::new(),
+        effects_used: None,
+    })?;
+    let module = Module::from_binary(&engine, wasm).map_err(|e| ExecutionError {
+        message: format!("invalid wasm module: {e}"),
+        outputs: Vec::new(),
+        caps_used: Vec::new(),
+        effects_used: None,
+    })?;
 
     let mut caps_map = HashMap::<String, Vec<String>>::new();
     for cap in capabilities {
@@ -72,7 +124,7 @@ pub fn execute_wasm(
 
     let host_state = HostState {
         limits: StoreLimitsBuilder::new()
-            .memory_size(WASM_MEMORY_LIMIT_BYTES)
+            .memory_size(max_memory_bytes.unwrap_or(WASM_MEMORY_LIMIT_BYTES))
             .table_elements(WASM_TABLE_ELEMENTS_LIMIT)
             .instances(WASM_INSTANCES_LIMIT)
             .tables(WASM_TABLES_LIMIT)
@@ -82,51 +134,194 @@ pub fn execute_wasm(
         output: None,
         capabilities: caps_map,
         caps_used: BTreeSet::new(),
+        contract: contract
+            .map(compile_runtime_contract)
+            .transpose()
+            .map_err(|e| ExecutionError {
+                message: format!("tool contract compile failed: {e}"),
+                outputs: Vec::new(),
+                caps_used: Vec::new(),
+                effects_used: None,
+            })?,
     };
 
     let mut store = Store::new(&engine, host_state);
     store.limiter(|state| &mut state.limits);
     store
         .set_fuel(WASM_FUEL_LIMIT)
-        .map_err(|e| format!("wasm fuel configuration failed: {e}"))?;
+        .map_err(|e| ExecutionError {
+            message: format!("wasm fuel configuration failed: {e}"),
+            outputs: Vec::new(),
+            caps_used: Vec::new(),
+            effects_used: None,
+        })?;
 
     let mut linker = Linker::new(&engine);
-    define_hostcalls(&mut linker).map_err(|e| format!("hostcall registration failed: {e}"))?;
+    define_hostcalls(&mut linker).map_err(|e| ExecutionError {
+        message: format!("hostcall registration failed: {e}"),
+        outputs: Vec::new(),
+        caps_used: Vec::new(),
+        effects_used: None,
+    })?;
 
     let instance = linker
         .instantiate(&mut store, &module)
-        .map_err(|e| format!("wasm instantiation failed: {e}"))?;
+        .map_err(|e| ExecutionError {
+            message: format!("wasm instantiation failed: {e}"),
+            outputs: Vec::new(),
+            caps_used: Vec::new(),
+            effects_used: None,
+        })?;
 
     let result = if let Ok(func) = instance.get_typed_func::<(), i32>(&mut store, entrypoint) {
-        let result = func.call(&mut store, ()).map_err(|e| {
-            if matches!(store.get_fuel(), Ok(0)) {
-                format!("wasm execution failed: fuel exhausted: {e}")
-            } else {
-                format!("wasm execution failed: {e}")
+        let result = match func.call(&mut store, ()) {
+            Ok(value) => value,
+            Err(e) => {
+                let message = if matches!(store.get_fuel(), Ok(0)) {
+                    format!("wasm execution failed: fuel exhausted: {e}")
+                } else {
+                    format!("wasm execution failed: {e}")
+                };
+                return Err(capture_execution_error(&store, message));
             }
-        })?;
+        };
         result.to_string().into_bytes()
     } else if let Ok(func) = instance.get_typed_func::<(), ()>(&mut store, entrypoint) {
-        func.call(&mut store, ()).map_err(|e| {
-            if matches!(store.get_fuel(), Ok(0)) {
+        if let Err(e) = func.call(&mut store, ()) {
+            let message = if matches!(store.get_fuel(), Ok(0)) {
                 format!("wasm execution failed: fuel exhausted: {e}")
             } else {
                 format!("wasm execution failed: {e}")
-            }
-        })?;
+            };
+            return Err(capture_execution_error(&store, message));
+        }
         Vec::new()
     } else {
-        return Err(format!(
-            "entrypoint not found with supported signature (() -> i32 | ()) : {entrypoint}"
+        return Err(capture_execution_error(
+            &store,
+            format!(
+                "entrypoint not found with supported signature (() -> i32 | ()) : {entrypoint}"
+            ),
         ));
     };
 
     let output = store.data().output.clone().unwrap_or(result);
     let caps_used = store.data().caps_used.iter().cloned().collect::<Vec<_>>();
+    let effects_used = store
+        .data()
+        .contract
+        .as_ref()
+        .map(snapshot_effect_usage_contract);
     Ok(ExecutionOutcome {
         outputs: output,
         caps_used,
+        effects_used,
     })
+}
+
+fn capture_execution_error(store: &Store<HostState>, message: String) -> ExecutionError {
+    let state = store.data();
+    ExecutionError {
+        message,
+        outputs: state.output.clone().unwrap_or_default(),
+        caps_used: state.caps_used.iter().cloned().collect(),
+        effects_used: state.contract.as_ref().map(snapshot_effect_usage_contract),
+    }
+}
+
+fn compile_runtime_contract(
+    tool_contract: &ToolContractV1Draft,
+) -> Result<RuntimeContractState, String> {
+    let mut effects = Vec::with_capacity(tool_contract.effects.len());
+    for effect in &tool_contract.effects {
+        effects.push(compile_runtime_effect(effect)?);
+    }
+    Ok(RuntimeContractState {
+        effects,
+        max_effect_events: tool_contract.limits.max_effect_events,
+        effect_events: 0,
+    })
+}
+
+fn compile_runtime_effect(effect: &EffectDeclV1Draft) -> Result<RuntimeEffectState, String> {
+    let (selector, selector_repr) = match effect.kind.as_str() {
+        "fs.read" | "fs.read_tree" | "fs.write" => {
+            let Some(path_prefix) = effect.selector.path_prefix.as_deref() else {
+                return Err(format!(
+                    "effect {} missing selector.path_prefix",
+                    effect.kind
+                ));
+            };
+            let Some(path_prefix) = normalize_abs_path(path_prefix) else {
+                return Err(format!(
+                    "effect {} selector.path_prefix must be an absolute normalized path",
+                    effect.kind
+                ));
+            };
+            (
+                RuntimeEffectSelector::PathPrefix(path_prefix.clone()),
+                path_prefix,
+            )
+        }
+        "net.http" => {
+            let Some(url_prefix) = effect.selector.url_prefix.as_deref() else {
+                return Err("effect net.http missing selector.url_prefix".to_string());
+            };
+            let parsed = Url::parse(url_prefix).map_err(|_| {
+                "effect net.http selector.url_prefix must be a valid URL".to_string()
+            })?;
+            (
+                RuntimeEffectSelector::NetHttpPrefix(parsed.clone()),
+                parsed.to_string(),
+            )
+        }
+        "kv.read" | "kv.write" => {
+            let Some(key) = effect.selector.key.as_ref() else {
+                return Err(format!("effect {} missing selector.key", effect.kind));
+            };
+            (RuntimeEffectSelector::Key(key.clone()), key.clone())
+        }
+        "queue.publish" | "queue.consume" => {
+            let Some(topic) = effect.selector.topic.as_ref() else {
+                return Err(format!("effect {} missing selector.topic", effect.kind));
+            };
+            (RuntimeEffectSelector::Topic(topic.clone()), topic.clone())
+        }
+        "time.now" | "random.bytes" => (RuntimeEffectSelector::Empty, "{}".to_string()),
+        _ => {
+            return Err(format!(
+                "unsupported effect kind in runtime contract: {}",
+                effect.kind
+            ));
+        }
+    };
+    Ok(RuntimeEffectState {
+        kind: effect.kind.clone(),
+        selector,
+        selector_repr,
+        max_calls: effect.limits.max_calls,
+        max_bytes_in: effect.limits.max_bytes_in,
+        max_bytes_out: effect.limits.max_bytes_out,
+        calls: 0,
+        bytes_in: 0,
+        bytes_out: 0,
+        denied_calls: 0,
+    })
+}
+
+fn snapshot_effect_usage_contract(contract: &RuntimeContractState) -> Vec<EffectUseV1Draft> {
+    contract
+        .effects
+        .iter()
+        .map(|effect| EffectUseV1Draft {
+            kind: effect.kind.clone(),
+            selector: effect.selector_repr.clone(),
+            calls: effect.calls,
+            bytes_in: effect.bytes_in,
+            bytes_out: effect.bytes_out,
+            denied_calls: effect.denied_calls,
+        })
+        .collect()
 }
 
 fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> {
@@ -181,6 +376,13 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
                 |value| !value.is_empty(),
                 "time.now",
             )?;
+            require_effect(
+                &mut caller,
+                "time.now",
+                |selector| matches!(selector, RuntimeEffectSelector::Empty),
+                0,
+                8,
+            )?;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|e| anyhow!("time error: {e}"))?;
@@ -204,6 +406,13 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             let Some(fill_len) = bounded_guest_len(len, MAX_HOSTCALL_COPY_BYTES) else {
                 return Ok(-1);
             };
+            require_effect(
+                &mut caller,
+                "random.bytes",
+                |selector| matches!(selector, RuntimeEffectSelector::Empty),
+                0,
+                fill_len as u64,
+            )?;
             let mut buf = vec![0_u8; fill_len];
             random_fill_os(&mut buf).map_err(|e| anyhow!("random_fill failed: {e}"))?;
             Ok(write_to_memory(&mut caller, ptr as usize, &buf).unwrap_or(-1))
@@ -266,6 +475,29 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
                         .unwrap_or(false)
                 },
                 "fs.read",
+            )?;
+            let file_len = match fs::metadata(&path_resolved) {
+                Ok(metadata) => metadata.len(),
+                Err(_) => return Ok(-1),
+            };
+            if file_len > max_output as u64 {
+                return Ok(-1);
+            }
+            require_effect(
+                &mut caller,
+                "fs.read",
+                |selector| {
+                    if let RuntimeEffectSelector::PathPrefix(prefix) = selector {
+                        return resolve_path_for_prefix_check(Path::new(prefix), true)
+                            .map(|resolved_prefix| {
+                                path_buf_within_prefix(&path_resolved, &resolved_prefix)
+                            })
+                            .unwrap_or(false);
+                    }
+                    false
+                },
+                0,
+                file_len,
             )?;
             let Some(data) = read_file_bytes_capped(&path_resolved, max_output) else {
                 return Ok(-1);
@@ -339,6 +571,22 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             if encoded.len() > max_output {
                 return Ok(-1);
             }
+            require_effect(
+                &mut caller,
+                "fs.read_tree",
+                |selector| {
+                    if let RuntimeEffectSelector::PathPrefix(prefix) = selector {
+                        return resolve_path_for_prefix_check(Path::new(prefix), true)
+                            .map(|resolved_prefix| {
+                                path_buf_within_prefix(&root_resolved, &resolved_prefix)
+                            })
+                            .unwrap_or(false);
+                    }
+                    false
+                },
+                0,
+                encoded.len() as u64,
+            )?;
             Ok(write_to_memory(&mut caller, out_ptr as usize, &encoded).unwrap_or(-1))
         },
     )?;
@@ -411,6 +659,22 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
                 },
                 "fs.write",
             )?;
+            require_effect(
+                &mut caller,
+                "fs.write",
+                |selector| {
+                    if let RuntimeEffectSelector::PathPrefix(prefix) = selector {
+                        return resolve_path_for_prefix_check(Path::new(prefix), true)
+                            .map(|resolved_prefix| {
+                                path_buf_within_prefix(&final_path, &resolved_prefix)
+                            })
+                            .unwrap_or(false);
+                    }
+                    false
+                },
+                bytes.len() as u64,
+                0,
+            )?;
             if write_file_replace_symlink_safe(&final_path, &bytes).is_err() {
                 return Ok(-1);
             };
@@ -470,6 +734,18 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             let Some(body) = read_limited_bytes(&mut reader, max_output) else {
                 return Ok(-1);
             };
+            require_effect(
+                &mut caller,
+                "net.http",
+                |selector| {
+                    if let RuntimeEffectSelector::NetHttpPrefix(allowed) = selector {
+                        return net_uri_within_prefix(&requested, allowed);
+                    }
+                    false
+                },
+                0,
+                body.len() as u64,
+            )?;
             Ok(write_to_memory(&mut caller, out_ptr as usize, &body).unwrap_or(-1))
         },
     )?;
@@ -504,6 +780,13 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             if value.len() > MAX_KV_VALUE_BYTES {
                 return Ok(-1);
             }
+            require_effect(
+                &mut caller,
+                "kv.write",
+                |selector| matches!(selector, RuntimeEffectSelector::Key(allowed) if allowed == &key),
+                value.len() as u64,
+                0,
+            )?;
             let path = kv_file_path(&key_bytes);
             if let Some(parent) = path.parent() {
                 if fs::create_dir_all(parent).is_err() {
@@ -562,6 +845,13 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             if data.len() > out_len as usize {
                 return Ok(-1);
             }
+            require_effect(
+                &mut caller,
+                "kv.read",
+                |selector| matches!(selector, RuntimeEffectSelector::Key(allowed) if allowed == &key),
+                0,
+                data.len() as u64,
+            )?;
             Ok(write_to_memory(&mut caller, out_ptr as usize, &data).unwrap_or(-1))
         },
     )?;
@@ -597,6 +887,13 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             if message.len() > MAX_QUEUE_MESSAGE_BYTES {
                 return Ok(-1);
             }
+            require_effect(
+                &mut caller,
+                "queue.publish",
+                |selector| matches!(selector, RuntimeEffectSelector::Topic(allowed) if allowed == &topic),
+                message.len() as u64,
+                0,
+            )?;
             let path = queue_file_path(&topic_bytes);
             if let Some(parent) = path.parent() {
                 if fs::create_dir_all(parent).is_err() {
@@ -686,6 +983,13 @@ fn define_hostcalls(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Erro
             if payload.len() > out_len as usize {
                 return Ok(-1);
             }
+            require_effect(
+                &mut caller,
+                "queue.consume",
+                |selector| matches!(selector, RuntimeEffectSelector::Topic(allowed) if allowed == &topic),
+                0,
+                payload.len() as u64,
+            )?;
             let rewritten = if lines.is_empty() {
                 String::new()
             } else {
@@ -789,6 +1093,52 @@ fn require_capability(
         return Err(anyhow!("required capability missing: {kind}"));
     }
     caller.data_mut().caps_used.insert(used_marker.to_string());
+    Ok(())
+}
+
+fn require_effect(
+    caller: &mut Caller<'_, HostState>,
+    kind: &str,
+    selector_matches: impl Fn(&RuntimeEffectSelector) -> bool,
+    bytes_in: u64,
+    bytes_out: u64,
+) -> anyhow::Result<()> {
+    let Some(contract) = caller.data_mut().contract.as_mut() else {
+        return Ok(());
+    };
+
+    let match_index = contract
+        .effects
+        .iter()
+        .position(|effect| effect.kind == kind && selector_matches(&effect.selector));
+    let Some(effect_idx) = match_index else {
+        if let Some(kind_idx) = contract
+            .effects
+            .iter()
+            .position(|effect| effect.kind == kind)
+        {
+            contract.effects[kind_idx].denied_calls =
+                contract.effects[kind_idx].denied_calls.saturating_add(1);
+        }
+        return Err(anyhow!("required tool contract effect missing: {kind}"));
+    };
+
+    let effect = &contract.effects[effect_idx];
+    let overflow_calls = effect.calls.saturating_add(1) > effect.max_calls;
+    let overflow_in = effect.bytes_in.saturating_add(bytes_in) > effect.max_bytes_in;
+    let overflow_out = effect.bytes_out.saturating_add(bytes_out) > effect.max_bytes_out;
+    let overflow_events = contract.effect_events.saturating_add(1) > contract.max_effect_events;
+    if overflow_calls || overflow_in || overflow_out || overflow_events {
+        contract.effects[effect_idx].denied_calls =
+            contract.effects[effect_idx].denied_calls.saturating_add(1);
+        return Err(anyhow!("tool contract effect limits exceeded: {kind}"));
+    }
+
+    let effect = &mut contract.effects[effect_idx];
+    effect.calls = effect.calls.saturating_add(1);
+    effect.bytes_in = effect.bytes_in.saturating_add(bytes_in);
+    effect.bytes_out = effect.bytes_out.saturating_add(bytes_out);
+    contract.effect_events = contract.effect_events.saturating_add(1);
     Ok(())
 }
 

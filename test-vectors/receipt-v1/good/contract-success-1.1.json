@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.1.0-draft",
+  "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "manifest_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "policy_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "bundle_hash": "sha256:abababababababababababababababababababababababababababababababab",
+  "inputs_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "outputs_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "runtime_version_digest": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+  "result_digest": "sha256:3434343434343434343434343434343434343434343434343434343434343434",
+  "caps_requested": [
+    "fs.read:/tmp/provenact"
+  ],
+  "caps_granted": [
+    "fs.read:/tmp/provenact"
+  ],
+  "caps_used": [
+    "fs.read"
+  ],
+  "contract_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "instructions_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "input_schema_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "output_schema_hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+  "effects_used": [
+    {
+      "kind": "fs.read",
+      "selector": "/tmp/provenact",
+      "calls": 1,
+      "bytes_in": 0,
+      "bytes_out": 128,
+      "denied_calls": 0
+    }
+  ],
+  "result": {
+    "status": "success",
+    "code": "ok"
+  },
+  "runtime": {
+    "name": "provenact-runtime",
+    "version": "0.2.0",
+    "profile": "wasmtime36-hostabi-v0"
+  },
+  "started_at": 1738848000,
+  "finished_at": 1738848001,
+  "timestamp_strategy": "local_untrusted_unix_seconds",
+  "receipt_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+}

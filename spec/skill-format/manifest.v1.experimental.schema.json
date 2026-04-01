@@ -1,11 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Skill Manifest (v1 Experimental)",
-  "description": "Non-normative draft schema for v1 compatibility planning.",
+  "description": "Experimental draft schema for manifest v1.0.0-draft and v1.1.0-draft.",
   "type": "object",
   "required": [
     "schema_version",
     "id",
+    "name",
     "version",
     "entrypoint",
     "artifact",
@@ -18,7 +19,10 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.0.0-draft"
+      "enum": [
+        "1.0.0-draft",
+        "1.1.0-draft"
+      ]
     },
     "id": {
       "type": "string",
@@ -40,12 +44,18 @@
         },
         {
           "type": "object",
-          "required": ["kind", "path"],
+          "required": [
+            "kind",
+            "path"
+          ],
           "additionalProperties": false,
           "properties": {
             "kind": {
               "type": "string",
-              "enum": ["wasi-command", "wasi-reactor"]
+              "enum": [
+                "wasi-command",
+                "wasi-reactor"
+              ]
             },
             "path": {
               "type": "string",
@@ -85,7 +95,10 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["kind", "value"],
+        "required": [
+          "kind",
+          "value"
+        ],
         "additionalProperties": false,
         "properties": {
           "kind": {
@@ -129,6 +142,448 @@
           }
         }
       }
+    },
+    "tool_contract": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "instructions",
+        "effects",
+        "determinism",
+        "limits"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.1.0-draft"
+        },
+        "instructions": {
+          "type": "object",
+          "required": [
+            "format",
+            "text",
+            "hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "text/plain",
+                "text/markdown"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "hash": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "selector",
+              "limits"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "fs.read",
+                  "fs.read_tree",
+                  "fs.write",
+                  "net.http",
+                  "kv.read",
+                  "kv.write",
+                  "queue.publish",
+                  "queue.consume",
+                  "time.now",
+                  "random.bytes"
+                ]
+              },
+              "selector": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "path_prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "url_prefix": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "methods": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "items": {
+                      "type": "string",
+                      "const": "GET"
+                    }
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "topic": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "limits": {
+                "type": "object",
+                "required": [
+                  "max_calls",
+                  "max_bytes_in",
+                  "max_bytes_out"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "max_calls": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "max_bytes_in": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "max_bytes_out": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "fs.read",
+                        "fs.read_tree",
+                        "fs.write"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "selector": {
+                      "type": "object",
+                      "required": [
+                        "path_prefix"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "path_prefix": {
+                          "type": "string",
+                          "pattern": "^/"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "net.http"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "selector": {
+                      "type": "object",
+                      "required": [
+                        "url_prefix",
+                        "methods"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "url_prefix": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "methods": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 1,
+                          "items": {
+                            "type": "string",
+                            "const": "GET"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "kv.read",
+                        "kv.write"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "selector": {
+                      "type": "object",
+                      "required": [
+                        "key"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "queue.publish",
+                        "queue.consume"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "selector": {
+                      "type": "object",
+                      "required": [
+                        "topic"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "topic": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "time.now",
+                        "random.bytes"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "selector": {
+                      "type": "object",
+                      "maxProperties": 0
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "determinism": {
+          "type": "object",
+          "required": [
+            "mode",
+            "required_capabilities"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "deterministic",
+                "requires_capabilities"
+              ]
+            },
+            "required_capabilities": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "net.http",
+                  "time.now",
+                  "random.bytes"
+                ]
+              }
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "max_duration_ms",
+            "max_memory_bytes",
+            "max_input_bytes",
+            "max_output_bytes",
+            "max_effect_events"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "max_duration_ms": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_memory_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_input_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_output_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_effect_events": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "determinism": {
+                "properties": {
+                  "mode": {
+                    "const": "deterministic"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "determinism": {
+                "properties": {
+                  "required_capabilities": {
+                    "maxItems": 0
+                  }
+                }
+              },
+              "effects": {
+                "not": {
+                  "contains": {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "net.http",
+                          "time.now",
+                          "random.bytes"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "determinism": {
+                "properties": {
+                  "mode": {
+                    "const": "requires_capabilities"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "determinism": {
+                "properties": {
+                  "required_capabilities": {
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0.0-draft"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "tool_contract"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "1.1.0-draft"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "tool_contract"
+        ],
+        "properties": {
+          "inputs_schema": {
+            "type": "object"
+          },
+          "outputs_schema": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
 }

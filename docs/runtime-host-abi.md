@@ -90,6 +90,25 @@ v0 runtime profile note:
 - `kv.read` / `kv.write` use `capability_ceiling.kv`.
 - `queue.publish` / `queue.consume` use `capability_ceiling.queue`.
 
+## Experimental v1.1 Contract Enforcement
+
+When `manifest.schema_version` is `1.1.0-draft`, hostcalls are additionally
+gated by `manifest.tool_contract.effects`:
+- selector match per effect kind
+- per-effect limits (`max_calls`, `max_bytes_in`, `max_bytes_out`)
+- global effect-event limit (`max_effect_events`)
+
+Runtime collects typed usage ledger entries in receipt `effects_used`:
+- `kind`
+- `selector`
+- `calls`
+- `bytes_in`
+- `bytes_out`
+- `denied_calls`
+
+This is execution-policy enforcement only; no orchestration/agent behavior is
+introduced.
+
 ## Local Runtime Storage
 
 Defaults (works on macOS and Linux):

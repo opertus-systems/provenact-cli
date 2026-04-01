@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.1.0-draft",
+  "id": "provenact.echo.contract.bad.limits",
+  "name": "echo.contract.bad.limits",
+  "version": "0.1.0",
+  "entrypoint": "run",
+  "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "inputs_schema": {"type": "object"},
+  "outputs_schema": {"type": "object"},
+  "capabilities": [{"kind": "fs.read", "value": "/tmp/provenact"}],
+  "signers": ["alice.dev"],
+  "tool_contract": {
+    "schema_version": "1.1.0-draft",
+    "instructions": {
+      "format": "text/plain",
+      "text": "Echo input JSON as output JSON.",
+      "hash": "sha256:d8c62139b7a0df514cf3851023843f03a787fab72ef90087cd2f2246a2755da6"
+    },
+    "effects": [
+      {
+        "kind": "fs.read",
+        "selector": {"path_prefix": "/tmp/provenact"},
+        "limits": {"max_calls": 0, "max_bytes_in": 0, "max_bytes_out": 1}
+      }
+    ],
+    "determinism": {"mode": "deterministic", "required_capabilities": []},
+    "limits": {
+      "max_duration_ms": 1,
+      "max_memory_bytes": 1,
+      "max_input_bytes": 1,
+      "max_output_bytes": 1,
+      "max_effect_events": 0
+    }
+  }
+}

@@ -33,10 +33,10 @@ Success output contract:
 - `inspect` intentionally emits only deterministic field lines
 
 Experimental schema gate:
-- manifests with `schema_version: "1.0.0-draft"` are rejected unless
+- manifests with `schema_version: "1.0.0-draft"` or `"1.1.0-draft"` are rejected unless
   `--allow-experimental` is explicitly passed
 - gate failure message is deterministic:
-  `manifest schema_version '1.0.0-draft' requires --allow-experimental`
+  `manifest schema_version '<version>' requires --allow-experimental`
 
 Recommended for untrusted environments:
 - always pass `--keys-digest` on `verify` and `run` (required by CLI)
@@ -123,6 +123,15 @@ layouts while keeping execution in Provenact wrappers:
 - receipt format defaults to `v0`; `--receipt-format v1-draft` emits draft v1
   receipt fields including `bundle_hash`, `policy_hash`,
   `runtime_version_digest`, and `result_digest`
+- for contract-enabled manifests (`schema_version: "1.1.0-draft"`):
+  - `--receipt-format v1-draft` is required
+  - input JSON must validate against `manifest.inputs_schema` before execution
+  - output bytes must be valid JSON and validate against `manifest.outputs_schema`
+  - typed side effects are enforced against `manifest.tool_contract.effects`
+    (selectors and per-effect/global limits)
+  - receipts include `contract_hash`, `instructions_hash`,
+    `input_schema_hash`, `output_schema_hash`, and `effects_used`
+  - failure receipts are emitted for post-runtime contract failures
 - required trust-anchor pin: `sha256(public-keys.json)` must match `--keys-digest`
 - optional OCI signature check: when `--require-cosign` is set, `cosign verify <oci-ref>` must succeed before execution
 - bounded file sizes for policy/input/receipt parsing and bundle metadata
@@ -137,6 +146,9 @@ Receipt invariants expected by the golden flow:
 - `receipt.artifact` equals `manifest.artifact`
 - `receipt_hash` verifies from payload fields (excluding `receipt_hash`)
 - `caps_used` is deterministic for a fixed manifest/policy/input set
+- for `schema_version: "1.1.0-draft"` receipts, tampering with contract/hash
+  extension fields (`contract_hash`, schema hashes, `effects_used`) fails
+  verification.
 
 `verify-registry-entry` validates downloaded artifact bytes against registry
 entry digests:

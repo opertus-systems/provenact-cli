@@ -58,6 +58,78 @@ fn make_index_and_store(base: &Path) -> (std::path::PathBuf, String, std::path::
     (provenact_home, digest.to_string(), store)
 }
 
+fn make_index_and_store_contract(base: &Path) -> (std::path::PathBuf, String, std::path::PathBuf) {
+    let provenact_home = base.join("provenact-home-contract");
+    let digest = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+    let store = provenact_home
+        .join("store")
+        .join("sha256")
+        .join(&digest[7..]);
+    fs::create_dir_all(&store).expect("store should be created");
+
+    let manifest = json!({
+        "schema_version": "1.1.0-draft",
+        "id": "provenact.export.contract",
+        "name": "demo.contract.echo",
+        "version": "0.1.0",
+        "entrypoint": "run",
+        "artifact": digest,
+        "inputs_schema": { "type": "object" },
+        "outputs_schema": { "type": "object" },
+        "capabilities": [],
+        "signers": ["alice.dev"],
+        "tool_contract": {
+            "schema_version": "1.1.0-draft",
+            "instructions": {
+                "format": "text/plain",
+                "text": "Echo input JSON as output JSON.",
+                "hash": "sha256:d8c62139b7a0df514cf3851023843f03a787fab72ef90087cd2f2246a2755da6"
+            },
+            "effects": [],
+            "determinism": {
+                "mode": "deterministic",
+                "required_capabilities": []
+            },
+            "limits": {
+                "max_duration_ms": 1000,
+                "max_memory_bytes": 1048576,
+                "max_input_bytes": 4096,
+                "max_output_bytes": 4096,
+                "max_effect_events": 8
+            }
+        }
+    });
+    write(
+        &store.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest)
+            .expect("manifest should serialize")
+            .as_slice(),
+    );
+
+    let index = json!({
+        "schema_version": "1.0.0",
+        "entries": [
+            {
+                "skill": digest,
+                "source": "./skill.tar.zst",
+                "store": store,
+                "installed_at": 1,
+                "manifest_name": "demo.contract.echo",
+                "manifest_version": "0.1.0"
+            }
+        ]
+    });
+    fs::create_dir_all(&provenact_home).expect("provenact home should be created");
+    write(
+        &provenact_home.join("index.json"),
+        serde_json::to_vec_pretty(&index)
+            .expect("index should serialize")
+            .as_slice(),
+    );
+
+    (provenact_home, digest.to_string(), store)
+}
+
 #[test]
 fn export_agentskills_codex_repo_writes_expected_layout() {
     let root = temp_dir("export_agentskills_codex_repo");
@@ -168,4 +240,57 @@ fn export_agentskills_rejects_admin_scope_for_non_codex() {
         stderr.contains("scope=admin is only supported for agent=codex"),
         "{stderr}"
     );
+}
+
+#[test]
+fn export_agentskills_includes_contract_instructions_and_flags() {
+    let root = temp_dir("export_agentskills_contract");
+    let repo = root.join("repo");
+    fs::create_dir_all(&repo).expect("repo should be created");
+    let (provenact_home, digest, _store) = make_index_and_store_contract(&root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args([
+            "export",
+            "agentskills",
+            "--agent",
+            "codex",
+            "--scope",
+            "repo",
+        ])
+        .current_dir(&repo)
+        .env("PROVENACT_HOME", &provenact_home)
+        .output()
+        .expect("export should run");
+    assert!(output.status.success(), "{:?}", output);
+
+    let exported_root = repo.join(".agents").join("skills");
+    let dirs = fs::read_dir(&exported_root)
+        .expect("export root should exist")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("dirs should be readable");
+    assert_eq!(dirs.len(), 1, "expected one exported skill folder");
+    let skill_dir = dirs[0].path();
+
+    let skill_md = fs::read_to_string(skill_dir.join("SKILL.md")).expect("SKILL.md should exist");
+    assert!(skill_md.contains(&digest), "{skill_md}");
+    assert!(skill_md.contains("Immutable Tool Contract"), "{skill_md}");
+    assert!(
+        skill_md
+            .contains("sha256:d8c62139b7a0df514cf3851023843f03a787fab72ef90087cd2f2246a2755da6"),
+        "{skill_md}"
+    );
+    assert!(
+        skill_md.contains("Echo input JSON as output JSON."),
+        "{skill_md}"
+    );
+
+    let run_sh = fs::read_to_string(skill_dir.join("scripts/run.sh")).expect("run.sh should exist");
+    assert!(run_sh.contains("--allow-experimental"), "{run_sh}");
+    assert!(run_sh.contains("--receipt-format v1-draft"), "{run_sh}");
+
+    let run_ps1 =
+        fs::read_to_string(skill_dir.join("scripts/run.ps1")).expect("run.ps1 should exist");
+    assert!(run_ps1.contains("--allow-experimental"), "{run_ps1}");
+    assert!(run_ps1.contains("--receipt-format v1-draft"), "{run_ps1}");
 }

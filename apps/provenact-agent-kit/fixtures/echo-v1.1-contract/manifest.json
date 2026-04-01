@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.1.0-draft",
+  "id": "echo.e2e.contract",
+  "name": "echo.e2e.contract",
+  "version": "0.1.0",
+  "entrypoint": "run",
+  "artifact": "sha256:c9e2d2c87ed55e68710f8ba626e6787518a9d544e6502c24d6a319631e15590a",
+  "inputs_schema": {
+    "type": "object",
+    "required": ["msg"],
+    "properties": {
+      "msg": { "type": "string" }
+    },
+    "additionalProperties": false
+  },
+  "outputs_schema": {
+    "type": "object",
+    "required": ["ok"],
+    "properties": {
+      "ok": { "type": "boolean" }
+    },
+    "additionalProperties": false
+  },
+  "capabilities": [],
+  "signers": ["alice.dev"],
+  "tool_contract": {
+    "schema_version": "1.1.0-draft",
+    "instructions": {
+      "format": "text/plain",
+      "text": "Echo input JSON as output JSON.",
+      "hash": "sha256:d8c62139b7a0df514cf3851023843f03a787fab72ef90087cd2f2246a2755da6"
+    },
+    "effects": [],
+    "determinism": {
+      "mode": "deterministic",
+      "required_capabilities": []
+    },
+    "limits": {
+      "max_duration_ms": 2000,
+      "max_memory_bytes": 1048576,
+      "max_input_bytes": 4096,
+      "max_output_bytes": 4096,
+      "max_effect_events": 8
+    }
+  }
+}

@@ -37,6 +37,25 @@ Versioning.
   - `scripts/check-sync-parity.sh` parity gate
   - `scripts/check-release-contract.sh` source-pin contract gate
   - CI jobs `sync-spec-check` and `release-contract-check`
+- Experimental manifest `1.1.0-draft` tool contract support:
+  - immutable instructions (`text` + verifier-checked hash)
+  - typed effect declarations/selectors/limits
+  - determinism declaration and runtime ceilings
+  - dual-declare capability/effect equivalence validation
+- Experimental receipt `1.1.0-draft` contract-binding fields:
+  - `contract_hash`
+  - `instructions_hash`
+  - `input_schema_hash`
+  - `output_schema_hash`
+  - `effects_used` (typed effect ledger with denied-call counters)
+- Runtime contract enforcement in `run` for `1.1.0-draft` manifests:
+  - pre-run input schema validation
+  - typed hostcall effect authorization and limits
+  - post-run output JSON/schema validation
+  - deterministic failure receipts after runtime start
+- `export agentskills` now exports immutable contract instructions/effect summaries
+  for contract-enabled manifests and emits wrappers with required
+  `--allow-experimental --receipt-format v1-draft` flags.
 
 ### Changed
 - `verify` and `run` now require `--keys-digest` (digest pinning is no longer
@@ -57,12 +76,14 @@ Versioning.
   reproducible build proofs are not yet a shipped v0 guarantee.
 - `spec/hashing.md` now specifies v1 draft receipt preimage and bundle-hash
   preimage rules.
+- Experimental schema gating now applies to both `1.0.0-draft` and
+  `1.1.0-draft` manifests.
 - P0-1 remediation evidence for `RUSTSEC-2026-0009`:
   - verified no `time 0.3.36` in `Cargo.lock`
   - lockfile no longer resolves a `time` package in this workspace
   - `cargo audit` is clean for the advisory
   - mirror source pin recorded as
-    `opertus-systems/provenact-spec@fe677208ab9025c44884de36fe6ebf999889048b`
+    `opertus-systems/provenact-spec@e76349a330342875e17f9c9fdaeb88f2e31011b4`
 
 ## [0.1.0] - 2026-02-06
 
