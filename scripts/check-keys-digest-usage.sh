@@ -6,12 +6,14 @@ files=(
   "Makefile"
   "cli/provenact-cli/README.md"
   "docs/*.md"
+  "scripts/*.sh"
+  "apps/provenact-agent-kit/scripts/*.sh"
   ".github/workflows/*.yml"
 )
 
 awk '
 function is_verify_run_command(s) {
-  return s ~ /provenact-cli[[:space:]]+(verify|run)([[:space:]]|$)/ || s ~ /cargo[[:space:]]+run[[:space:]]+-p[[:space:]]+provenact-cli[[:space:]]+--[[:space:]]+(verify|run)([[:space:]]|$)/ || s ~ /\$\(CLI\)[[:space:]]+(verify|run)([[:space:]]|$)/;
+  return s ~ /provenact-cli[[:space:]]+(verify|run)([[:space:]]|$)/ || s ~ /cargo[[:space:]]+run[[:space:]]+-p[[:space:]]+provenact-cli[[:space:]]+--[[:space:]]+(verify|run)([[:space:]]|$)/ || s ~ /\$\(CLI\)[[:space:]]+(verify|run)([[:space:]]|$)/ || s ~ /"?\$CLI_BIN"?[[:space:]]+(verify|run)([[:space:]]|$)/ || s ~ /"?\$\{CLI_BIN\}"?[[:space:]]+(verify|run)([[:space:]]|$)/ || s ~ /"?\$\{CLI\[@\]\}"?[[:space:]]+(verify|run)([[:space:]]|$)/;
 }
 
 function flush_command() {

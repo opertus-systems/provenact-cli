@@ -35,6 +35,9 @@ This checklist defines the minimum release gate for Provenact v0.
   - future `oci://...@sha256:...` syntax is parseable without requiring backend implementation
 - [x] Roadmap status matches reality:
   - `docs/roadmap.md` marks M1-M4 complete
+- [x] Key-rotation drill is documented and fixture-backed:
+  - `docs/key-rotation-drill.md`
+  - `test-vectors/key-rotation/`
 
 ## Single Local Validation Command
 

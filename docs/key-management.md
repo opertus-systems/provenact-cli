@@ -72,3 +72,6 @@ Use this when a signing key is suspected compromised.
   `pack -> sign -> verify -> run -> verify-receipt`.
 - [ ] Old pin intentionally fails where expected.
 - [ ] Incident/audit evidence recorded.
+
+Use `docs/key-rotation-drill.md` for the local fixture-backed drill that proves
+old digest pins fail closed after a keyset byte change.

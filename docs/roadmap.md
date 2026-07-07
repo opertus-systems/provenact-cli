@@ -119,10 +119,14 @@ Current:
 - Integration tests cover missing-digest denial for both commands.
 - Operator runbook published: `docs/key-management.md`.
 - CI command-example gate published: `scripts/check-keys-digest-usage.sh`.
+- Key-rotation drill fixture published in `test-vectors/key-rotation/` and
+  linked from `RELEASE_V0_CHECKLIST.md`.
+- Command-example gate covers docs, Makefile, workflows, tracked shell scripts,
+  and array/variable CLI wrapper forms.
 
-Next:
-- Add key-rotation drill fixture and release checklist linkage.
-- Extend command-example gate to shell scripts outside this repository root.
+Exit evidence:
+- `docs/key-rotation-drill.md`
+- `scripts/check-keys-digest-usage.sh`
 
 ### P1: Capability and Policy Operations Hardening
 

@@ -14,6 +14,7 @@ Key implementation-tracking document:
 - `docs/audit-evidence-checklist.md` (per-release audit packet template)
 - `docs/getting-started.md` (secure pack/sign/verify/run quickstart)
 - `docs/key-management.md` (trust-anchor rotation and revocation runbook)
+- `docs/key-rotation-drill.md` (fixture-backed digest-pinning drill)
 - `docs/observability.md` (runtime/perf metrics and telemetry contract)
 - `docs/runtime-host-abi.md` (WASM host import ABI for runtime execution)
 - `docs/skill-management-roadmap.md` (cross-ecosystem skill compatibility plan)
