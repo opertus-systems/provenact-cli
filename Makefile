@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-CLI := cargo run -p provenact-cli --
+CLI := cargo run -p provenact-cli --bin provenact-cli --
 BUNDLE ?= ./bundle
 WASM ?= ./skill.wasm
 MANIFEST ?= ./manifest.json

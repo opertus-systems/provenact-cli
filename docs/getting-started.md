@@ -26,7 +26,7 @@ You need:
 ## 2) Pack Bundle
 
 ```bash
-cargo run -p provenact-cli -- pack \
+cargo run -p provenact-cli --bin provenact-cli -- pack \
   --bundle ./bundle \
   --wasm ./skill.wasm \
   --manifest ./manifest.json
@@ -35,7 +35,7 @@ cargo run -p provenact-cli -- pack \
 ## 3) Sign Bundle
 
 ```bash
-cargo run -p provenact-cli -- sign \
+cargo run -p provenact-cli --bin provenact-cli -- sign \
   --bundle ./bundle \
   --signer alice.dev \
   --secret-key ./alice.key
@@ -50,7 +50,7 @@ KEYS_DIGEST="$(shasum -a 256 ./public-keys.json | awk '{print "sha256:"$1}')"
 ## 5) Verify Bundle
 
 ```bash
-cargo run -p provenact-cli -- verify \
+cargo run -p provenact-cli --bin provenact-cli -- verify \
   --bundle ./bundle \
   --keys ./public-keys.json \
   --keys-digest "$KEYS_DIGEST"
@@ -59,7 +59,7 @@ cargo run -p provenact-cli -- verify \
 Optional cosign-gated verify:
 
 ```bash
-cargo run -p provenact-cli -- verify \
+cargo run -p provenact-cli --bin provenact-cli -- verify \
   --bundle ./bundle \
   --keys ./public-keys.json \
   --keys-digest "$KEYS_DIGEST" \
@@ -70,7 +70,7 @@ cargo run -p provenact-cli -- verify \
 ## 6) Run with Policy
 
 ```bash
-cargo run -p provenact-cli -- run \
+cargo run -p provenact-cli --bin provenact-cli -- run \
   --bundle ./bundle \
   --keys ./public-keys.json \
   --keys-digest "$KEYS_DIGEST" \
@@ -82,7 +82,7 @@ cargo run -p provenact-cli -- run \
 Optional cosign-gated run:
 
 ```bash
-cargo run -p provenact-cli -- run \
+cargo run -p provenact-cli --bin provenact-cli -- run \
   --bundle ./bundle \
   --keys ./public-keys.json \
   --keys-digest "$KEYS_DIGEST" \
@@ -96,7 +96,7 @@ cargo run -p provenact-cli -- run \
 ## 7) Verify Receipt
 
 ```bash
-cargo run -p provenact-cli -- verify-receipt --receipt ./receipt.json
+cargo run -p provenact-cli --bin provenact-cli -- verify-receipt --receipt ./receipt.json
 ```
 
 ## 8) Replay Receipt Evidence
@@ -105,7 +105,7 @@ Replay validates the existing bundle, input, and receipt without executing the
 skill again:
 
 ```bash
-cargo run -p provenact-cli -- replay \
+cargo run -p provenact-cli --bin provenact-cli -- replay \
   --bundle ./bundle \
   --input ./input.json \
   --receipt ./receipt.json

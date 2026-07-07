@@ -75,7 +75,7 @@ Acceptance criteria:
 - Receipt hash verification passes canonicalization rules.
 
 Exit signal:
-- End-to-end test vector: `verify -> run -> receipt-verify`.
+- End-to-end test vector: `verify -> run -> verify-receipt`.
 
 ### M4: Conformance + Hardening (Complete)
 
@@ -135,8 +135,8 @@ Goal:
 
 Current:
 - Staged policy rollout modes are documented in
-  `docs/policy-rollout-modes.md` and implemented by `provenact-cli run
-  --policy-mode <audit|warn|enforce>`.
+  `docs/policy-rollout-modes.md` and implemented by the run command's
+  `--policy-mode <audit|warn|enforce>` option.
 - `enforce` remains the default; `audit` and `warn` only downgrade
   capability-ceiling findings.
 - Signer-set drift and unsupported ad hoc policy exception vectors are covered
@@ -168,25 +168,18 @@ Exit evidence:
 
 ## Immediate Next Work (Focus Lock)
 
-This section defines the next execution sequence to keep the product focused.
+This section records the focus-lock status after the P0-P2 hardening sequence.
 
-1. Freeze v1 boundary docs:
-- finalize scope and non-goals in `SPEC.md`
-- keep agent/orchestration features out of this repository
-
-2. Ship one golden workflow:
-- ensure `pack -> sign -> verify -> run -> receipt-verify` is documented and
-  tested as the default operator path
-- prioritize UX and deterministic failure modes in CLI output
-
-3. Turn RFC drafts into concrete draft schemas:
-- `spec/rfcs/skill-manifest-v1.md` -> experimental schema draft
-- `spec/rfcs/execution-receipt-v1.md` -> experimental schema draft
-- add positive/negative vectors for both drafts
-
-4. Hold adapter work until gate conditions pass:
-- no adapter implementation before schema + conformance gates are satisfied
-- when started, implement only one thin reference adapter first
+Completed:
+- v1 scope and non-goals are documented in `SPEC.md`, `spec/compatibility.md`,
+  and `AGENTS.md`.
+- The golden operator workflow is documented in `docs/getting-started.md`,
+  `cli/provenact-cli/README.md`, and fixture-backed CLI tests.
+- Draft manifest and receipt schemas are concrete under `spec/` and covered by
+  positive/negative vectors in `test-vectors/skill-format/manifest-v1/` and
+  `test-vectors/receipt-v1/`.
+- Adapter work remains gated by schema and conformance evidence; no in-core
+  planning, scheduling, or orchestration behavior is introduced.
 
 ## Out of Scope Here
 

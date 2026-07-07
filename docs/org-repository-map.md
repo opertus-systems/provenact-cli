@@ -72,7 +72,7 @@ Purpose: copy/paste integration surfaces that accelerate adoption.
 Required initial scope:
 - MCP server profile for Provenact invocation
 - AgentSkills export templates for Codex/Claude/Cursor
-- GitHub Actions examples for verify/run/receipt-verify gates
+- GitHub Actions examples for verify/run/verify-receipt gates
 - wrapper-mode scripts for common CI systems
 
 Exit criteria:

@@ -46,12 +46,12 @@ The following files define the `v0` contract:
 ## Versioning
 
 Versioning and compatibility policy is defined in
-`docs/versioning-policy.md`.
+`spec/compatibility.md`.
 
 ## Conformance Artifacts
 
 Deterministic vectors for the normative contract are published in
-`test-vectors/` and enforced by `npm run conformance`.
+`test-vectors/` and enforced by `cargo conformance`.
 
 ## Policy Boundary
 

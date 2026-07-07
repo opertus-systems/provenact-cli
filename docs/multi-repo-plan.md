@@ -58,7 +58,7 @@ Phase B (`0.2.x` to `0.9.x`):
 - Add ergonomics without expanding trust boundaries.
 - Add conformance fixtures shared with CLI vectors.
 - Gate changes with golden roundtrip tests:
-  - `pack -> sign -> verify -> run -> receipt-verify`
+  - `pack -> sign -> verify -> run -> verify-receipt`
 
 Phase C (`1.0.0`):
 - Cut once substrate API invariants are frozen in spec/tests.
