@@ -45,7 +45,7 @@ use keys::{parse_public_keys, parse_signing_key, verify_keys_digest};
 use preflight::{load_verified_bundle, read_manifest_and_signatures};
 use runtime_exec::execute_wasm;
 
-const USAGE: &str = "usage:\n  provenact-cli verify --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli inspect --bundle <bundle-dir> [--allow-experimental]\n  provenact-cli pack --bundle <bundle-dir> --wasm <skill.wasm> --manifest <manifest.json> [--allow-experimental]\n  provenact-cli archive --bundle <bundle-dir> --output <skill.tar.zst>\n  provenact-cli sign --bundle <bundle-dir> --signer <signer-id> --secret-key <ed25519-secret-key-file> [--allow-experimental]\n  provenact-cli install --artifact <path|file://...|http(s)://...|oci://...> [--keys <public-keys.json> --keys-digest <sha256:...>] [--policy <policy.{json|yaml}>] [--require-signatures] [--allow-insecure-http] [--allow-experimental]\n  provenact-cli export agentskills --agent <claude|codex|cursor> --scope <user|repo|admin>\n  provenact-cli run --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> --policy <policy.{json|yaml}> --input <input-file> --receipt <receipt.json> [--receipt-format <v0|v1-draft>] [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli verify-receipt --receipt <receipt.json>\n  provenact-cli verify-registry-entry --artifact <artifact-bytes-file> --sha256 <sha256:...> --md5 <32-lowercase-hex>\n  provenact-cli experimental-validate-manifest-v1 --manifest <manifest.json>\n  provenact-cli experimental-validate-receipt-v1 --receipt <receipt.json>";
+const USAGE: &str = "usage:\n  provenact-cli verify --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli inspect --bundle <bundle-dir> [--allow-experimental]\n  provenact-cli pack --bundle <bundle-dir> --wasm <skill.wasm> --manifest <manifest.json> [--allow-experimental]\n  provenact-cli archive --bundle <bundle-dir> --output <skill.tar.zst>\n  provenact-cli sign --bundle <bundle-dir> --signer <signer-id> --secret-key <ed25519-secret-key-file> [--allow-experimental]\n  provenact-cli install --artifact <path|file://...|http(s)://...|oci://...> [--keys <public-keys.json> --keys-digest <sha256:...>] [--policy <policy.{json|yaml}>] [--require-signatures] [--allow-insecure-http] [--allow-experimental]\n  provenact-cli export agentskills --agent <claude|codex|cursor> --scope <user|repo|admin>\n  provenact-cli run --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> --policy <policy.{json|yaml}> --input <input-file> --receipt <receipt.json> [--receipt-format <v0|v1-draft>] [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli replay --bundle <bundle-dir> --input <input-file> --receipt <receipt.json> [--output <output-file>] [--allow-experimental]\n  provenact-cli verify-receipt --receipt <receipt.json>\n  provenact-cli verify-registry-entry --artifact <artifact-bytes-file> --sha256 <sha256:...> --md5 <32-lowercase-hex>\n  provenact-cli experimental-validate-manifest-v1 --manifest <manifest.json>\n  provenact-cli experimental-validate-receipt-v1 --receipt <receipt.json>";
 const EXPERIMENTAL_SCHEMA_VERSION: &str = MANIFEST_V1_DRAFT_SCHEMA_VERSION;
 const EXPERIMENTAL_SCHEMA_VERSION_V1_1: &str = MANIFEST_V1_1_DRAFT_SCHEMA_VERSION;
 const BUNDLE_META_SCHEMA_VERSION: &str = "1.0.0";
@@ -87,6 +87,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         Some("install") => run_install(&args[1..]),
         Some("export") => run_export(&args[1..]),
         Some("run") => run_execute(&args[1..]),
+        Some("replay") => run_replay(&args[1..]),
         Some("verify-receipt") => run_verify_receipt_cmd(&args[1..]),
         Some("verify-registry-entry") => run_verify_registry_entry_cmd(&args[1..]),
         Some("experimental-validate-manifest-v1") => run_validate_manifest_v1_cmd(&args[1..]),
@@ -319,6 +320,28 @@ fn run_execute(args: &[String]) -> Result<(), String> {
         receipt_format,
         allow_experimental,
     })
+}
+
+fn run_replay(args: &[String]) -> Result<(), String> {
+    let parsed = parse_flags_with_switches(
+        args,
+        &["--bundle", "--input", "--receipt", "--output"],
+        &["--allow-experimental"],
+        USAGE,
+    )?;
+    let bundle_dir = required_path(&parsed, "--bundle", USAGE)?;
+    let input_path = required_path(&parsed, "--input", USAGE)?;
+    let receipt_path = required_path(&parsed, "--receipt", USAGE)?;
+    let output_path = parsed.get("--output").map(PathBuf::from);
+    let allow_experimental = has_switch(&parsed, "--allow-experimental");
+
+    replay_receipt(
+        &bundle_dir,
+        &input_path,
+        &receipt_path,
+        output_path.as_deref(),
+        allow_experimental,
+    )
 }
 
 fn run_verify_receipt_cmd(args: &[String]) -> Result<(), String> {
@@ -1283,6 +1306,87 @@ fn verify_receipt_file(receipt_path: &Path) -> Result<(), String> {
             );
             Err(err)
         }
+    }
+}
+
+fn replay_receipt(
+    bundle_dir: &Path,
+    input_path: &Path,
+    receipt_path: &Path,
+    output_path: Option<&Path>,
+    allow_experimental: bool,
+) -> Result<(), String> {
+    let bundle = load_verified_bundle(bundle_dir)?;
+    require_manifest_schema_allowed(&bundle.manifest, allow_experimental)?;
+
+    let input_bytes = read_file_limited(input_path, MAX_INPUT_BYTES, "input")?;
+    let input_hash = sha256_prefixed(&input_bytes);
+    let output_hash = output_path
+        .map(|path| {
+            read_file_limited(path, MAX_INPUT_BYTES, "output").map(|bytes| sha256_prefixed(&bytes))
+        })
+        .transpose()?;
+
+    let receipt_raw = read_file_limited(receipt_path, MAX_JSON_BYTES, "receipt.json")?;
+    if let Ok(receipt) = parse_receipt_json(&receipt_raw) {
+        verify_receipt_hash(&receipt).map_err(|e| e.to_string())?;
+        require_matching_digest(
+            "receipt.artifact",
+            &bundle.manifest.artifact,
+            &receipt.artifact,
+        )?;
+        require_matching_digest("receipt.inputs_hash", &input_hash, &receipt.inputs_hash)?;
+        if let Some(output_hash) = output_hash.as_deref() {
+            require_matching_digest("receipt.outputs_hash", output_hash, &receipt.outputs_hash)?;
+        }
+        println!(
+            "OK replay artifact={} receipt={} schema=v0",
+            receipt.artifact,
+            receipt_path.display()
+        );
+        return Ok(());
+    }
+
+    let receipt = parse_receipt_v1_draft_json(&receipt_raw).map_err(|e| e.to_string())?;
+    verify_receipt_v1_draft_hash(&receipt).map_err(|e| e.to_string())?;
+    let manifest_hash = compute_manifest_hash(&bundle.manifest).map_err(|e| e.to_string())?;
+    let bundle_hash = compute_bundle_hash(
+        &bundle.manifest.artifact,
+        &manifest_hash,
+        &bundle.signatures,
+    )
+    .map_err(|e| e.to_string())?;
+    require_matching_digest(
+        "receipt.artifact",
+        &bundle.manifest.artifact,
+        &receipt.artifact,
+    )?;
+    require_matching_digest(
+        "receipt.manifest_hash",
+        &manifest_hash,
+        &receipt.manifest_hash,
+    )?;
+    require_matching_digest("receipt.bundle_hash", &bundle_hash, &receipt.bundle_hash)?;
+    require_matching_digest("receipt.inputs_hash", &input_hash, &receipt.inputs_hash)?;
+    if let Some(output_hash) = output_hash.as_deref() {
+        require_matching_digest("receipt.outputs_hash", output_hash, &receipt.outputs_hash)?;
+    }
+    println!(
+        "OK replay artifact={} receipt={} schema={}",
+        receipt.artifact,
+        receipt_path.display(),
+        receipt.schema_version
+    );
+    Ok(())
+}
+
+fn require_matching_digest(label: &str, expected: &str, actual: &str) -> Result<(), String> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} mismatch: expected {expected}, got {actual}"
+        ))
     }
 }
 

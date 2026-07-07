@@ -39,6 +39,21 @@ All events include:
 - `event`
 - `timestamp` (unix seconds)
 
+## Correlation IDs
+
+Operators may attach correlation IDs in log pipelines or wrapper scripts, but
+correlation IDs are not receipt fields and are not part of receipt hash
+preimages.
+
+Preferred join keys for incident review:
+- `artifact`
+- `receipt_hash`
+- receipt path or storage URI
+- telemetry `timestamp`
+
+This keeps receipts deterministic while still allowing external traces, tickets,
+or request IDs to join against Provenact events.
+
 ## Metric Mapping
 
 Recommended metrics derived from events:

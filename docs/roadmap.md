@@ -138,9 +138,18 @@ Next:
 Goal:
 - Improve incident/debug value of receipts without weakening determinism.
 
-Next:
-- Define deterministic replay contract and minimal replay CLI prototype.
-- Add receipt correlation-id guidance to observability docs.
+Current:
+- `provenact-cli replay` validates existing bundle, input, receipt, and optional
+  output evidence without re-executing WASM.
+- Replay verifies v0 and v1-draft receipt integrity, bundle artifact linkage,
+  input hashes, optional output hashes, and v1-draft manifest/bundle hashes.
+- Receipt correlation IDs are documented as external telemetry context, not
+  receipt fields or hash preimage material.
+
+Exit evidence:
+- `cli/provenact-cli/tests/receipt.rs` covers replay success for v0 and
+  v1-draft receipts plus mismatched-input denial.
+- `docs/observability.md` documents deterministic correlation guidance.
 
 ## Immediate Next Work (Focus Lock)
 

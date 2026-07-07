@@ -99,6 +99,21 @@ cargo run -p provenact-cli -- run \
 cargo run -p provenact-cli -- verify-receipt --receipt ./receipt.json
 ```
 
+## 8) Replay Receipt Evidence
+
+Replay validates the existing bundle, input, and receipt without executing the
+skill again:
+
+```bash
+cargo run -p provenact-cli -- replay \
+  --bundle ./bundle \
+  --input ./input.json \
+  --receipt ./receipt.json
+```
+
+If you also captured output bytes, add `--output ./output.txt` to verify
+`receipt.outputs_hash`.
+
 ## Notes
 
 - `verify` and `run` reject unsigned bundles.

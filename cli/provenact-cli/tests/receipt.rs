@@ -326,6 +326,84 @@ fn verify_receipt_succeeds_for_valid_receipt() {
 }
 
 #[test]
+fn replay_succeeds_for_valid_v0_receipt_bundle_and_io() {
+    let receipt_path = make_receipt();
+    let root = receipt_path.parent().expect("receipt has parent");
+    let output_path = root.join("output.txt");
+    write(&output_path, b"42");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["replay", "--bundle"])
+        .arg(root.join("bundle"))
+        .args(["--input"])
+        .arg(root.join("input.json"))
+        .args(["--receipt"])
+        .arg(&receipt_path)
+        .args(["--output"])
+        .arg(&output_path)
+        .output()
+        .expect("replay should run");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf8");
+    assert!(stdout.contains("OK replay"), "stdout was: {stdout}");
+    assert!(stdout.contains("schema=v0"), "stdout was: {stdout}");
+}
+
+#[test]
+fn replay_succeeds_for_valid_v1_draft_receipt_bundle_and_io() {
+    let receipt_path = make_receipt_v1_draft();
+    let root = receipt_path.parent().expect("receipt has parent");
+    let output_path = root.join("output.txt");
+    write(&output_path, b"42");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["replay", "--bundle"])
+        .arg(root.join("bundle"))
+        .args(["--input"])
+        .arg(root.join("input.json"))
+        .args(["--receipt"])
+        .arg(&receipt_path)
+        .args(["--output"])
+        .arg(&output_path)
+        .output()
+        .expect("replay should run");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf8");
+    assert!(stdout.contains("OK replay"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("schema=1.0.0-draft"),
+        "stdout was: {stdout}"
+    );
+}
+
+#[test]
+fn replay_fails_for_input_hash_mismatch() {
+    let receipt_path = make_receipt();
+    let root = receipt_path.parent().expect("receipt has parent");
+    let bad_input_path = root.join("bad-input.json");
+    write(&bad_input_path, br#"{"msg":"changed"}"#);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["replay", "--bundle"])
+        .arg(root.join("bundle"))
+        .args(["--input"])
+        .arg(&bad_input_path)
+        .args(["--receipt"])
+        .arg(&receipt_path)
+        .output()
+        .expect("replay should run");
+
+    assert!(!output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf8");
+    assert!(
+        stderr.contains("receipt.inputs_hash mismatch"),
+        "stderr was: {stderr}"
+    );
+}
+
+#[test]
 fn verify_receipt_fails_for_tampered_receipt() {
     let receipt_path = make_receipt();
     let raw = fs::read(&receipt_path).expect("receipt should exist");

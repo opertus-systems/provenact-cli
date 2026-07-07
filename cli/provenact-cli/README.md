@@ -23,6 +23,7 @@ This keeps security-critical checks centralized and reused by both `verify` and
 - `install --artifact <path|file://...|http(s)://...|oci://...> [--keys <public-keys.json> --keys-digest <sha256:...>] [--policy <policy.{json|yaml}>] [--require-signatures] [--allow-experimental]`
 - `export agentskills --agent <claude|codex|cursor> --scope <user|repo|admin>`
 - `run --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> --policy <policy.{json|yaml}> --input <input-file> --receipt <receipt.json> [--receipt-format <v0|v1-draft>] [--require-cosign --oci-ref <oci-ref>] [--allow-experimental]`
+- `replay --bundle <bundle-dir> --input <input-file> --receipt <receipt.json> [--output <output-file>] [--allow-experimental]`
 - `verify-receipt --receipt <receipt.json>`
 - `verify-registry-entry --artifact <artifact-bytes-file> --sha256 <sha256:...> --md5 <32-lowercase-hex>`
 - `experimental-validate-manifest-v1 --manifest <manifest.json>`
@@ -150,6 +151,17 @@ Receipt invariants expected by the golden flow:
   extension fields (`contract_hash`, schema hashes, `effects_used`) fails
   verification.
 
+`replay` is a non-executing incident/debug validation command:
+- verifies bundle integrity using the same preflight checks as `verify`/`run`
+- verifies the receipt hash for v0 or v1-draft receipts
+- checks `receipt.artifact` against the bundle artifact
+- checks `receipt.inputs_hash` against `--input`
+- checks `receipt.outputs_hash` against `--output` when provided
+- for v1-draft receipts, also checks `receipt.manifest_hash` and
+  `receipt.bundle_hash`
+
+`replay` does not fetch keys, evaluate policy, or execute WASM.
+
 `verify-registry-entry` validates downloaded artifact bytes against registry
 entry digests:
 - `md5` transport checksum must match exactly
@@ -171,6 +183,7 @@ Experimental validation commands:
 6. `provenact-cli verify --bundle ./bundle --keys ./public-keys.json --keys-digest \"$KEYS_DIGEST\"`
 7. `provenact-cli run --bundle ./bundle --keys ./public-keys.json --keys-digest \"$KEYS_DIGEST\" --policy ./policy.json --input ./input.json --receipt ./receipt.json`
 8. `provenact-cli verify-receipt --receipt ./receipt.json`
+9. `provenact-cli replay --bundle ./bundle --input ./input.json --receipt ./receipt.json`
 
 ## Conformance
 
