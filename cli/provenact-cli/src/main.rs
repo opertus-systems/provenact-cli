@@ -45,7 +45,7 @@ use keys::{parse_public_keys, parse_signing_key, verify_keys_digest};
 use preflight::{load_verified_bundle, read_manifest_and_signatures};
 use runtime_exec::execute_wasm;
 
-const USAGE: &str = "usage:\n  provenact-cli verify --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli inspect --bundle <bundle-dir> [--allow-experimental]\n  provenact-cli pack --bundle <bundle-dir> --wasm <skill.wasm> --manifest <manifest.json> [--allow-experimental]\n  provenact-cli archive --bundle <bundle-dir> --output <skill.tar.zst>\n  provenact-cli sign --bundle <bundle-dir> --signer <signer-id> --secret-key <ed25519-secret-key-file> [--allow-experimental]\n  provenact-cli install --artifact <path|file://...|http(s)://...|oci://...> [--keys <public-keys.json> --keys-digest <sha256:...>] [--policy <policy.{json|yaml}>] [--require-signatures] [--allow-insecure-http] [--allow-experimental]\n  provenact-cli export agentskills --agent <claude|codex|cursor> --scope <user|repo|admin>\n  provenact-cli run --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> --policy <policy.{json|yaml}> --input <input-file> --receipt <receipt.json> [--receipt-format <v0|v1-draft>] [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli replay --bundle <bundle-dir> --input <input-file> --receipt <receipt.json> [--output <output-file>] [--allow-experimental]\n  provenact-cli verify-receipt --receipt <receipt.json>\n  provenact-cli verify-registry-entry --artifact <artifact-bytes-file> --sha256 <sha256:...> --md5 <32-lowercase-hex>\n  provenact-cli experimental-validate-manifest-v1 --manifest <manifest.json>\n  provenact-cli experimental-validate-receipt-v1 --receipt <receipt.json>";
+const USAGE: &str = "usage:\n  provenact-cli verify --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli inspect --bundle <bundle-dir> [--allow-experimental]\n  provenact-cli pack --bundle <bundle-dir> --wasm <skill.wasm> --manifest <manifest.json> [--allow-experimental]\n  provenact-cli archive --bundle <bundle-dir> --output <skill.tar.zst>\n  provenact-cli sign --bundle <bundle-dir> --signer <signer-id> --secret-key <ed25519-secret-key-file> [--allow-experimental]\n  provenact-cli install --artifact <path|file://...|http(s)://...|oci://...> [--keys <public-keys.json> --keys-digest <sha256:...>] [--policy <policy.{json|yaml}>] [--require-signatures] [--allow-insecure-http] [--allow-experimental]\n  provenact-cli export agentskills --agent <claude|codex|cursor> --scope <user|repo|admin>\n  provenact-cli run --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> --policy <policy.{json|yaml}> --input <input-file> --receipt <receipt.json> [--policy-mode <audit|warn|enforce>] [--receipt-format <v0|v1-draft>] [--require-cosign --oci-ref <oci-ref> --cosign-key <cosign.pub> --cosign-cert-identity <identity> --cosign-cert-oidc-issuer <issuer>] [--allow-experimental]\n  provenact-cli replay --bundle <bundle-dir> --input <input-file> --receipt <receipt.json> [--output <output-file>] [--allow-experimental]\n  provenact-cli verify-receipt --receipt <receipt.json>\n  provenact-cli verify-registry-entry --artifact <artifact-bytes-file> --sha256 <sha256:...> --md5 <32-lowercase-hex>\n  provenact-cli experimental-validate-manifest-v1 --manifest <manifest.json>\n  provenact-cli experimental-validate-receipt-v1 --receipt <receipt.json>";
 const EXPERIMENTAL_SCHEMA_VERSION: &str = MANIFEST_V1_DRAFT_SCHEMA_VERSION;
 const EXPERIMENTAL_SCHEMA_VERSION_V1_1: &str = MANIFEST_V1_1_DRAFT_SCHEMA_VERSION;
 const BUNDLE_META_SCHEMA_VERSION: &str = "1.0.0";
@@ -67,11 +67,37 @@ enum ReceiptFormat {
     V1Draft,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PolicyMode {
+    Audit,
+    Warn,
+    Enforce,
+}
+
+impl PolicyMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            PolicyMode::Audit => "audit",
+            PolicyMode::Warn => "warn",
+            PolicyMode::Enforce => "enforce",
+        }
+    }
+}
+
 fn parse_receipt_format(value: Option<&str>) -> Result<ReceiptFormat, String> {
     match value.unwrap_or("v0") {
         "v0" => Ok(ReceiptFormat::V0),
         "v1-draft" => Ok(ReceiptFormat::V1Draft),
         _ => Err("unsupported --receipt-format; expected v0 or v1-draft".to_string()),
+    }
+}
+
+fn parse_policy_mode(value: Option<&str>) -> Result<PolicyMode, String> {
+    match value.unwrap_or("enforce") {
+        "audit" => Ok(PolicyMode::Audit),
+        "warn" => Ok(PolicyMode::Warn),
+        "enforce" => Ok(PolicyMode::Enforce),
+        _ => Err("unsupported --policy-mode; expected audit, warn, or enforce".to_string()),
     }
 }
 
@@ -286,11 +312,13 @@ fn run_execute(args: &[String]) -> Result<(), String> {
             "--policy",
             "--input",
             "--receipt",
+            "--policy-mode",
             "--receipt-format",
         ],
         &["--allow-experimental", "--require-cosign"],
         USAGE,
     )?;
+    let policy_mode = parse_policy_mode(optional_string(&parsed, "--policy-mode").as_deref())?;
     let bundle_dir = required_path(&parsed, "--bundle", USAGE)?;
     let keys_path = required_path(&parsed, "--keys", USAGE)?;
     let keys_digest = required_string(&parsed, "--keys-digest", USAGE)?;
@@ -317,6 +345,7 @@ fn run_execute(args: &[String]) -> Result<(), String> {
         policy_path,
         input_path,
         receipt_path,
+        policy_mode,
         receipt_format,
         allow_experimental,
     })
@@ -668,6 +697,7 @@ struct RunBundleArgs {
     policy_path: PathBuf,
     input_path: PathBuf,
     receipt_path: PathBuf,
+    policy_mode: PolicyMode,
     receipt_format: ReceiptFormat,
     allow_experimental: bool,
 }
@@ -685,6 +715,7 @@ fn run_bundle(args: RunBundleArgs) -> Result<(), String> {
         policy_path,
         input_path,
         receipt_path,
+        policy_mode,
         receipt_format,
         allow_experimental,
     } = args;
@@ -745,8 +776,17 @@ fn run_bundle(args: RunBundleArgs) -> Result<(), String> {
             let policy = parse_policy_document(&policy_raw).map_err(|e| e.to_string())?;
             verify_trusted_signers(&bundle.manifest, &bundle.signatures, &policy)
                 .map_err(|e| e.to_string())?;
-            enforce_capability_ceiling(&bundle.manifest.capabilities, &policy)
-                .map_err(|e| e.to_string())?;
+            if let Err(err) = enforce_capability_ceiling(&bundle.manifest.capabilities, &policy) {
+                match policy_mode {
+                    PolicyMode::Enforce => return Err(err.to_string()),
+                    PolicyMode::Audit | PolicyMode::Warn => {
+                        eprintln!(
+                            "policy-mode {}: capability ceiling finding: {err}",
+                            policy_mode.as_str()
+                        );
+                    }
+                }
+            }
             let contract_enabled =
                 bundle.manifest.schema_version.as_deref() == Some(EXPERIMENTAL_SCHEMA_VERSION_V1_1);
             if contract_enabled && !matches!(receipt_format, ReceiptFormat::V1Draft) {

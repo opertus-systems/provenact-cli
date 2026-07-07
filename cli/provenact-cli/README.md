@@ -22,7 +22,7 @@ This keeps security-critical checks centralized and reused by both `verify` and
 - `sign --bundle <bundle-dir> --signer <signer-id> --secret-key <ed25519-secret-key-file> [--allow-experimental]`
 - `install --artifact <path|file://...|http(s)://...|oci://...> [--keys <public-keys.json> --keys-digest <sha256:...>] [--policy <policy.{json|yaml}>] [--require-signatures] [--allow-experimental]`
 - `export agentskills --agent <claude|codex|cursor> --scope <user|repo|admin>`
-- `run --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> --policy <policy.{json|yaml}> --input <input-file> --receipt <receipt.json> [--receipt-format <v0|v1-draft>] [--require-cosign --oci-ref <oci-ref>] [--allow-experimental]`
+- `run --bundle <bundle-dir> --keys <public-keys.json> --keys-digest <sha256:...> --policy <policy.{json|yaml}> --input <input-file> --receipt <receipt.json> [--policy-mode <audit|warn|enforce>] [--receipt-format <v0|v1-draft>] [--require-cosign --oci-ref <oci-ref>] [--allow-experimental]`
 - `replay --bundle <bundle-dir> --input <input-file> --receipt <receipt.json> [--output <output-file>] [--allow-experimental]`
 - `verify-receipt --receipt <receipt.json>`
 - `verify-registry-entry --artifact <artifact-bytes-file> --sha256 <sha256:...> --md5 <32-lowercase-hex>`
@@ -136,6 +136,10 @@ layouts while keeping execution in Provenact wrappers:
 - required trust-anchor pin: `sha256(public-keys.json)` must match `--keys-digest`
 - optional OCI signature check: when `--require-cosign` is set, `cosign verify <oci-ref>` must succeed before execution
 - bounded file sizes for policy/input/receipt parsing and bundle metadata
+
+`--policy-mode` defaults to `enforce`. `warn` and `audit` log capability-ceiling
+findings and continue, but every signature, digest, schema, trust-anchor,
+contract, and runtime failure remains fatal. See `docs/policy-rollout-modes.md`.
 
 Current execution support covers entrypoints with signatures:
 - `() -> i32` (output bytes are decimal UTF-8 of the return value)

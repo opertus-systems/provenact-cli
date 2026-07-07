@@ -191,6 +191,110 @@ capability_ceiling:
 }
 
 #[test]
+fn run_warn_and_audit_policy_modes_allow_capability_ceiling_finding() {
+    let root = temp_dir("run_policy_mode_warn_audit");
+    let wasm_path = root.join("input.wasm");
+    let manifest_path = root.join("input.manifest.json");
+    let bundle_dir = root.join("bundle");
+    let secret_key_path = root.join("signing.key");
+    let keys_path = root.join("public-keys.json");
+    let policy_path = root.join("policy.yaml");
+    let input_path = root.join("input.json");
+
+    let wasm = wasm_with_i32_entrypoint("run", 5);
+    write(&wasm_path, &wasm);
+    let artifact = sha256_prefixed(&wasm);
+    let manifest = format!(
+        "{{\"name\":\"echo.minimal\",\"version\":\"0.1.0\",\"entrypoint\":\"run\",\"artifact\":\"{artifact}\",\"capabilities\":[{{\"kind\":\"net\",\"value\":\"https://example.com/api\"}}],\"signers\":[\"alice.dev\"]}}"
+    );
+    write(&manifest_path, manifest.as_bytes());
+
+    let pack = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["pack", "--bundle"])
+        .arg(&bundle_dir)
+        .args(["--wasm"])
+        .arg(&wasm_path)
+        .args(["--manifest"])
+        .arg(&manifest_path)
+        .output()
+        .expect("pack should run");
+    assert!(pack.status.success(), "{:?}", pack);
+
+    let signing_key = SigningKey::from_bytes(&[40u8; 32]);
+    write(
+        &secret_key_path,
+        STANDARD.encode(signing_key.to_bytes()).as_bytes(),
+    );
+    let sign = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["sign", "--bundle"])
+        .arg(&bundle_dir)
+        .args(["--signer", "alice.dev", "--secret-key"])
+        .arg(&secret_key_path)
+        .output()
+        .expect("sign should run");
+    assert!(sign.status.success(), "{:?}", sign);
+
+    let keys = format!(
+        "{{\"alice.dev\":\"{}\"}}",
+        STANDARD.encode(signing_key.verifying_key().to_bytes())
+    );
+    write(&keys_path, keys.as_bytes());
+    let policy = r#"
+version: 1
+trusted_signers: ["alice.dev"]
+capability_ceiling:
+  net: ["https://api.open-meteo.com"]
+  exec: false
+  time: false
+"#;
+    write(&policy_path, policy.as_bytes());
+    write(&input_path, br#"{}"#);
+    let keys_digest = sha256_prefixed(&fs::read(&keys_path).expect("keys should exist"));
+
+    for mode in ["warn", "audit"] {
+        let receipt_path = root.join(format!("receipt-{mode}.json"));
+        let run = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+            .args(["run", "--bundle"])
+            .arg(&bundle_dir)
+            .args(["--keys"])
+            .arg(&keys_path)
+            .args(["--keys-digest"])
+            .arg(&keys_digest)
+            .args(["--policy"])
+            .arg(&policy_path)
+            .args(["--input"])
+            .arg(&input_path)
+            .args(["--receipt"])
+            .arg(&receipt_path)
+            .args(["--policy-mode", mode])
+            .output()
+            .expect("run should run");
+
+        assert!(run.status.success(), "{mode}: {run:?}");
+        assert!(receipt_path.exists(), "{mode}: receipt should exist");
+        let stderr = String::from_utf8(run.stderr).expect("stderr should be utf8");
+        assert!(
+            stderr.contains(&format!("policy-mode {mode}: capability ceiling finding")),
+            "{mode}: stderr was: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn run_rejects_unknown_policy_mode() {
+    let output = Command::new(env!("CARGO_BIN_EXE_provenact-cli"))
+        .args(["run", "--policy-mode", "observe"])
+        .output()
+        .expect("run should run");
+    assert!(!output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf8");
+    assert!(
+        stderr.contains("unsupported --policy-mode"),
+        "stderr was: {stderr}"
+    );
+}
+
+#[test]
 fn run_fails_when_require_cosign_without_cert_identity() {
     let root = temp_dir("run_require_cosign_no_cert_identity");
     let wasm_path = root.join("input.wasm");

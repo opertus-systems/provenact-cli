@@ -16,6 +16,7 @@ Key implementation-tracking document:
 - `docs/key-management.md` (trust-anchor rotation and revocation runbook)
 - `docs/key-rotation-drill.md` (fixture-backed digest-pinning drill)
 - `docs/observability.md` (runtime/perf metrics and telemetry contract)
+- `docs/policy-rollout-modes.md` (audit/warn/enforce capability rollout modes)
 - `docs/runtime-host-abi.md` (WASM host import ABI for runtime execution)
 - `docs/skill-management-roadmap.md` (cross-ecosystem skill compatibility plan)
 - `docs/multi-repo-plan.md` (repo boundaries and Rust-first SDK rollout plan)

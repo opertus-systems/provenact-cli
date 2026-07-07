@@ -133,9 +133,20 @@ Exit evidence:
 Goal:
 - Keep default-deny enforcement strict while improving policy operations.
 
-Next:
-- Add staged policy rollout modes (`audit`, `warn`, `enforce`) design doc.
-- Add regression vectors for policy exception handling and signer-set drift.
+Current:
+- Staged policy rollout modes are documented in
+  `docs/policy-rollout-modes.md` and implemented by `provenact-cli run
+  --policy-mode <audit|warn|enforce>`.
+- `enforce` remains the default; `audit` and `warn` only downgrade
+  capability-ceiling findings.
+- Signer-set drift and unsupported ad hoc policy exception vectors are covered
+  by verifier tests.
+
+Exit evidence:
+- `cli/provenact-cli/tests/run.rs`
+- `core/verifier/tests/signer_trust_vectors.rs`
+- `test-vectors/signer-trust/drift.json`
+- `test-vectors/policy/invalid/unsupported_exceptions.yaml`
 
 ### P2: Receipt and Replay Readiness
 
