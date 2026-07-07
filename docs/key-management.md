@@ -74,4 +74,6 @@ Use this when a signing key is suspected compromised.
 - [ ] Incident/audit evidence recorded.
 
 Use `docs/key-rotation-drill.md` for the local fixture-backed drill that proves
-old digest pins fail closed after a keyset byte change.
+old digest pins fail closed after a keyset byte change. The release evidence
+collector (`scripts/collect-release-evidence.sh`) runs the same drill and stores
+the digest values and command logs in the evidence packet.

@@ -27,4 +27,5 @@ Key implementation-tracking document:
 
 Local developer helpers:
 - `scripts/bootstrap-local.sh` (local prerequisite/version checks + CLI build smoke)
+- `scripts/collect-release-evidence.sh` (local release/audit evidence packet)
 - `Makefile` (one-command local secure flows, including cosign-gated variants)

@@ -19,14 +19,14 @@ Status legend:
 | Normative Source | Current Enforcement Evidence | Status | Notes |
 | --- | --- | --- | --- |
 | `spec/threat-model.md` | `cli/provenact-cli/tests/threat_model_gates.rs` + `docs/threat-model-controls.md` | covered | Threat-model checklist gates are explicit and automated where applicable |
-| `spec/compatibility.md` | `cli/provenact-cli` command surface (`run` requires `--receipt`; `experimental-*` commands explicitly separated), schema gating in verifier parsers | partial | Contract is enforced by CLI/verifier behavior; dedicated compatibility regression vectors can be expanded |
+| `spec/compatibility.md` | `cli/provenact-cli/tests/compatibility.rs`, CLI command surface (`run` requires `--receipt`; `experimental-*` commands explicitly separated), schema gating in verifier parsers | covered | Stable command surface and experimental command separation are regression-tested |
 | `spec/hashing.md` | `core/verifier/src/lib.rs` unit tests for artifact/snapshot/receipt hashes; receipt vectors in `test-vectors/receipt/`; snapshot vectors in `test-vectors/registry/snapshot/` | covered | JCS-based receipt/snapshot hashing verified; snapshot entries enforce `sha256` + `md5` format |
 | `spec/packaging.md` | `cli/provenact-cli/tests/pack_sign.rs`, `cli/provenact-cli/tests/e2e_flow.rs`, `cli/provenact-cli/tests/archive.rs` | covered | Deterministic pack/sign flows and canonical deterministic `skill.tar.zst` writer profile are regression-tested |
 | `spec/install.md` | `cli/provenact-cli/src/install.rs` + `cli/provenact-cli/tests/install.rs` | covered | Content-addressed install flow (`load -> hash -> verify -> validate -> store -> index`) is implemented and regression-tested |
 | `spec/install/index.schema.json` | `cli/provenact-cli/src/install.rs` writes index shape + `cli/provenact-cli/tests/install.rs` validates persisted index content | covered | Index schema fields are exercised by install success path and enforced by deterministic writer |
 | `spec/install/meta.schema.json` | `cli/provenact-cli/src/install.rs` writes store metadata + `cli/provenact-cli/tests/install.rs` asserts `meta.json` presence in content store | covered | Installed artifact metadata shape is produced on every successful install |
 | `spec/conformance.md` | `cargo conformance` alias + test suites in `core/verifier/tests/` and `cli/provenact-cli/tests/` | covered | CI workflow runs `cargo conformance` |
-| `spec/skill-format.md` | manifest/provenance/signatures parsing + verify flow in core/CLI tests | partial | End-to-end bundle-level assertions can still be expanded |
+| `spec/skill-format.md` | `cli/provenact-cli/tests/skill_format.rs`, manifest/provenance/signatures parsing, fixture bundle hash linkage, and CLI verify flow | covered | Bundle-level artifact, manifest hash, signatures linkage, provenance parsing, and verify path are regression-tested |
 | `spec/skill-format/manifest.schema.json` | `parse_manifest_json` + `core/verifier/tests/skill_format_vectors.rs` + `test-vectors/skill-format/manifest/` | covered | Good/bad manifest vectors enforced |
 | `spec/skill-format/provenance.schema.json` | `parse_provenance_json` + `core/verifier/tests/provenance_vectors.rs` + `test-vectors/skill-format/provenance/` | covered | Good/bad provenance vectors enforced |
 | `spec/skill-format/signatures.schema.json` | `parse_signatures_json` + `core/verifier/tests/skill_format_vectors.rs` + `test-vectors/skill-format/signatures/` | covered | Good/bad signatures vectors enforced |
@@ -47,6 +47,4 @@ Status legend:
 ## Remaining Hardening Opportunities
 
 No blocking conformance gaps are currently known for normative sources listed in
-`SPEC.md`.
-
-Areas still marked `partial` are hardening opportunities, not release blockers.
+`SPEC.md`, and no normative rows are currently marked `partial` or `gap`.

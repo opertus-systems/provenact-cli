@@ -20,6 +20,11 @@ Artifacts to include:
 - Workflow URLs and immutable run IDs
 - Commit SHA list in scope
 
+Local collection helper:
+- `./scripts/collect-release-evidence.sh [run-id]` captures local conformance,
+  CLI tests, key-digest gate output, key-rotation drill output, Git metadata,
+  and optional `syft`/`trivy` outputs under `target/release-evidence/`.
+
 ## 2) Artifact Integrity And Provenance Evidence
 
 - [ ] OCI artifact reference recorded (`ghcr.io/...:<tag>`).
@@ -43,6 +48,9 @@ Artifacts to include:
 Artifacts to include:
 - `sbom.spdx.json` (or equivalent)
 - scan reports + remediation tickets
+
+When `syft` or `trivy` is installed locally, `scripts/collect-release-evidence.sh`
+stores their outputs in the evidence directory.
 
 ## 4) Policy And Access Control Evidence
 
