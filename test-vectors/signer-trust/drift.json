@@ -1,0 +1,128 @@
+{
+  "cases": [
+    {
+      "name": "trusted manifest signer has trusted signature",
+      "expect": "ok",
+      "manifest": {
+        "name": "echo",
+        "version": "1.0.0",
+        "entrypoint": "run",
+        "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "capabilities": [],
+        "signers": ["alice.dev"]
+      },
+      "signatures": {
+        "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifest_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signatures": [
+          {
+            "signer": "alice.dev",
+            "algorithm": "ed25519",
+            "signature": "AA=="
+          }
+        ]
+      },
+      "policy": {
+        "version": 1,
+        "trusted_signers": ["alice.dev"],
+        "capability_ceiling": {
+          "exec": false,
+          "time": false
+        }
+      }
+    },
+    {
+      "name": "manifest signer set drifts away from policy trust set",
+      "expect": "untrusted_manifest_signers",
+      "manifest": {
+        "name": "echo",
+        "version": "1.0.0",
+        "entrypoint": "run",
+        "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "capabilities": [],
+        "signers": ["bob.dev"]
+      },
+      "signatures": {
+        "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifest_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signatures": [
+          {
+            "signer": "bob.dev",
+            "algorithm": "ed25519",
+            "signature": "AA=="
+          }
+        ]
+      },
+      "policy": {
+        "version": 1,
+        "trusted_signers": ["alice.dev"],
+        "capability_ceiling": {
+          "exec": false,
+          "time": false
+        }
+      }
+    },
+    {
+      "name": "signature signer is not declared by manifest",
+      "expect": "signature_signer_not_declared",
+      "manifest": {
+        "name": "echo",
+        "version": "1.0.0",
+        "entrypoint": "run",
+        "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "capabilities": [],
+        "signers": ["alice.dev"]
+      },
+      "signatures": {
+        "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifest_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signatures": [
+          {
+            "signer": "mallory.dev",
+            "algorithm": "ed25519",
+            "signature": "AA=="
+          }
+        ]
+      },
+      "policy": {
+        "version": 1,
+        "trusted_signers": ["alice.dev", "mallory.dev"],
+        "capability_ceiling": {
+          "exec": false,
+          "time": false
+        }
+      }
+    },
+    {
+      "name": "trusted manifest signer differs from actual signature signer",
+      "expect": "untrusted_signature_set",
+      "manifest": {
+        "name": "echo",
+        "version": "1.0.0",
+        "entrypoint": "run",
+        "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "capabilities": [],
+        "signers": ["alice.dev", "bob.dev"]
+      },
+      "signatures": {
+        "artifact": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifest_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signatures": [
+          {
+            "signer": "bob.dev",
+            "algorithm": "ed25519",
+            "signature": "AA=="
+          }
+        ]
+      },
+      "policy": {
+        "version": 1,
+        "trusted_signers": ["alice.dev"],
+        "capability_ceiling": {
+          "exec": false,
+          "time": false
+        }
+      }
+    }
+  ]
+}
